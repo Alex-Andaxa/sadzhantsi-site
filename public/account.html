@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Особистий кабінет — Зелений Сад</title>
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header>
+  <div class="container nav">
+    <a href="/" class="logo">🌱 Зелений Сад</a>
+    <nav class="nav-links">
+      <a href="/#catalog">Каталог</a>
+    </nav>
+    <div class="nav-actions">
+      <a href="/" class="account-link">← До магазину</a>
+    </div>
+  </div>
+</header>
+
+<main class="container page">
+
+  <!-- Кабінет -->
+  <div id="accountView" hidden>
+    <div class="profile-head">
+      <h2 id="hello" style="margin:0"></h2>
+      <div class="row" style="flex:0 0 auto">
+        <a href="/admin" class="btn-sm" id="toAdmin" hidden>⚙️ Адмін-панель</a>
+        <button class="btn-sm" id="logoutBtn">Вийти</button>
+      </div>
+    </div>
+    <p class="hint" id="memberSince"></p>
+
+    <div class="panel">
+      <h2>Історія покупок</h2>
+      <div id="orders"></div>
+    </div>
+
+    <div class="two-col">
+      <div class="panel">
+        <h2>Мої дані</h2>
+        <form id="profileForm">
+          <label>Ім'я <input name="name" required></label>
+          <label>Email <input name="email" disabled></label>
+          <label>Телефон <input name="phone" id="profilePhone" autocomplete="tel"></label>
+          <label>Місце проживання <input id="placeInput" placeholder="Почніть вводити назву населеного пункту"></label>
+          <p class="hint" style="margin:-4px 0 0">Використовується, щоб під час замовлення одразу показати відділення Нової Пошти чи Укрпошти поруч із вами.</p>
+          <p class="error"></p>
+          <button class="btn-green" type="submit">Зберегти</button>
+        </form>
+      </div>
+      <div class="panel">
+        <h2>Змінити пароль</h2>
+        <form id="passwordForm">
+          <input name="current" type="password" placeholder="Поточний пароль" required autocomplete="current-password">
+          <input name="next" type="password" placeholder="Новий пароль (мін. 6 символів)" required minlength="6" autocomplete="new-password">
+          <p class="error"></p>
+          <button class="btn-green" type="submit">Змінити пароль</button>
+        </form>
+        <!-- Підтвердження зміни пароля кодом з пошти -->
+        <form id="pwCodeForm" hidden>
+          <p class="code-note" id="pwCodeNote"></p>
+          <input name="code" class="code-input" inputmode="numeric" autocomplete="one-time-code"
+                 maxlength="6" pattern="\d{6}" placeholder="000000" required aria-label="6-значний код з листа">
+          <p class="error"></p>
+          <button class="btn-green" type="submit">Підтвердити зміну пароля</button>
+          <p class="hint" style="margin:0">
+            <button class="link-btn" id="pwResend" type="button">Надіслати код ще раз</button> ·
+            <button class="link-btn" id="pwCancel" type="button">Скасувати</button>
+          </p>
+        </form>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="/common.js"></script>
+<script>
+  let me = null;
+
+  // Обробник форм: показує помилку в <p class="error"> всередині форми
+  function handleForm(form, fn) {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const errEl = form.querySelector(".error");
+      const btn = form.querySelector("button[type=submit]");
+      errEl.textContent = "";
+      errEl.style.color = "";
+      btn.disabled = true;
+      try {
+        await fn(Object.fromEntries(new FormData(form)), errEl);
+      } catch (err) {
+        errEl.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+  const ok = (el, msg) => { el.style.color = "var(--green)"; el.textContent = msg; };
+
+  // Місце проживання обирається зі списку реальних населених пунктів
+  let place = { city: "", region: "" };
+  const placeText = () => placeLabel(place.city, place.region);
+  autocomplete($("placeInput"), {
+    fetcher: (q) => searchPlaces(q),
+    render: placeItemHtml,
+    onSelect: (c) => { place = { city: c.name, region: c.region }; $("placeInput").value = placeText(); },
+  });
+
+  attachPhoneInput($("profilePhone"));
+
+  handleForm($("profileForm"), async (data, errEl) => {
+    if (data.phone && !phoneComplete(data.phone)) throw new Error("Вкажіть повний номер: +380 (XX) XXX-XX-XX");
+    const typed = $("placeInput").value.trim();
+    if (!typed) place = { city: "", region: "" };
+    else if (typed !== placeText()) throw new Error("Оберіть місце проживання зі списку підказок");
+    me = (await api("/api/me", { method: "PUT", body: { ...data, ...place } })).user;
+    $("hello").textContent = `Вітаємо, ${me.name}!`;
+    ok(errEl, "Збережено ✓");
+  });
+  // Зміна пароля у два кроки: пароль → код з пошти
+  let pwPending = null;
+  let pwTimer;
+  function pwResendTimer(sec = 60) {
+    const b = $("pwResend");
+    clearInterval(pwTimer);
+    b.disabled = true;
+    const tick = () => {
+      b.textContent = sec > 0 ? `Надіслати ще раз (${sec} с)` : "Надіслати код ще раз";
+      if (sec-- <= 0) { clearInterval(pwTimer); b.disabled = false; }
+    };
+    tick();
+    pwTimer = setInterval(tick, 1000);
+  }
+  function showPwCode(data) {
+    pwPending = data.pending;
+    $("passwordForm").hidden = true;
+    $("pwCodeForm").hidden = false;
+    $("pwCodeNote").innerHTML = `Для підтвердження ми надіслали 6-значний код на <b>${esc(me.email)}</b>. Код дійсний 10 хвилин.` +
+      (data.dev ? `<br><small>Режим розробки: пошту не налаштовано, код виведено в консоль сервера.</small>` : "");
+    $("pwCodeForm").code.value = "";
+    $("pwCodeForm").code.focus();
+    pwResendTimer();
+  }
+  function resetPw() {
+    pwPending = null;
+    clearInterval(pwTimer);
+    $("passwordForm").reset();
+    $("pwCodeForm").hidden = true;
+    $("passwordForm").hidden = false;
+  }
+
+  handleForm($("passwordForm"), async (data) => {
+    showPwCode(await api("/api/me/password", { method: "PUT", body: data }));
+  });
+  $("pwCodeForm").code.addEventListener("input", (e) => {
+    e.target.value = e.target.value.replace(/\D/g, "").slice(0, 6);
+    if (e.target.value.length === 6) $("pwCodeForm").requestSubmit();
+  });
+  handleForm($("pwCodeForm"), async (data) => {
+    await api("/api/me/password/verify", { method: "POST", body: { token: pwPending, code: data.code } });
+    resetPw();
+    ok($("passwordForm").querySelector(".error"), "Пароль змінено ✓ На інших пристроях виконано вихід.");
+  });
+  $("pwResend").onclick = async () => {
+    const err = $("pwCodeForm").querySelector(".error");
+    err.textContent = "";
+    try { showPwCode(await api("/api/auth/resend", { method: "POST", body: { token: pwPending } })); }
+    catch (e) { err.textContent = e.message; }
+  };
+  $("pwCancel").onclick = resetPw;
+
+  $("logoutBtn").onclick = async () => {
+    await api("/api/auth/logout", { method: "POST", body: {} });
+    location.href = "/";
+  };
+
+  const toLogin = () => location.replace("/login?next=" + encodeURIComponent("/account"));
+
+  async function showAccount() {
+    $("accountView").hidden = false;
+    $("hello").textContent = `Вітаємо, ${me.name}!`;
+    $("memberSince").textContent = `${me.email} · з нами з ${fmtDate(me.created_at).split(",")[0]}`;
+    $("toAdmin").hidden = !me.is_admin;
+    const f = $("profileForm");
+    f.name.value = me.name; f.email.value = me.email; $("profilePhone").value = formatPhone(me.phone);
+    place = { city: me.city || "", region: me.region || "" };
+    $("placeInput").value = placeText();
+    await loadOrders();
+  }
+
+  async function loadOrders() {
+    $("orders").innerHTML = `<p class="hint">Завантаження…</p>`;
+    try {
+      const { orders } = await api("/api/me/orders");
+      if (!orders.length) {
+        $("orders").innerHTML = `<div class="empty">Ви ще нічого не купували. <a href="/#catalog">Перейти до каталогу →</a></div>`;
+        return;
+      }
+      const spent = orders.filter(o => o.status !== "cancelled").reduce((s, o) => s + o.total, 0);
+      $("orders").innerHTML =
+        `<p class="hint">Замовлень: ${orders.length} · на суму ${fmt(spent)}</p>` +
+        orders.map(o => `
+          <div class="order">
+            <div class="order-head">
+              <div><b>Замовлення №${o.id}</b><br><small>${fmtDate(o.created_at)}</small></div>
+              <span class="status" data-s="${esc(o.status)}">${esc(STATUS[o.status] || o.status)}</span>
+            </div>
+            <p class="hint" style="margin:0 0 8px">
+              ${esc(DELIVERY[o.delivery] || "")}: ${esc(o.city)}${o.branch ? ` — ${esc(o.branch)}` : ""}
+              ${o.ttn ? `<br>📦 ТТН: <b>${esc(o.ttn)}</b>` : ""}
+              <br>${esc(PAY_METHOD[o.payment_method] || "")}:
+              <span class="pay-badge" data-s="${esc(o.payment_status)}">${esc(PAY_STATUS[o.payment_status] || o.payment_status)}</span>
+            </p>
+            ${o.items.map(i => `
+              <div class="order-line" style="align-items:center">
+                <span class="row" style="flex-wrap:nowrap;gap:10px">
+                  ${i.image_url ? imgTag(i.image_url, i.product_name, "thumb") : `<span class="no-photo thumb">${esc(i.emoji || "🌱")}</span>`}
+                  <span>
+                    ${i.product_id ? `<a href="/product?id=${i.product_id}" class="card-link">${esc(i.product_name)}</a>` : esc(i.product_name)} × ${i.qty}
+                    ${i.sku ? `<span class="sku">${esc(i.sku)}</span>` : ""}
+                    ${i.status !== "pending" ? `<br><span class="item-st" data-s="${esc(i.status)}">${esc(ITEM_STATUS[i.status] || i.status)}</span>` : ""}
+                  </span>
+                </span>
+                <span>${fmt(i.price * i.qty)}</span>
+              </div>`).join("")}
+            ${o.comment ? `<p class="hint" style="margin:6px 0 0">💬 ${esc(o.comment)}</p>` : ""}
+            <div class="order-foot"><span>Разом</span><span>${fmt(o.total)}</span></div>
+            ${o.payment_method === "online" && !["paid", "refunded"].includes(o.payment_status) && o.status !== "cancelled"
+              ? `<p style="margin:10px 0 0"><button class="btn-green" data-pay="${o.id}">💳 Оплатити ${fmt(o.total)}</button></p>` : ""}
+            ${o.payment_method === "iban" && !["paid", "refunded"].includes(o.payment_status) && o.status !== "cancelled"
+              ? `<p style="margin:10px 0 0"><a class="btn-green" style="text-decoration:none;display:inline-block" href="/payment?order=${o.id}">🏦 Реквізити для оплати</a></p>` : ""}
+          </div>`).join("");
+    } catch (err) {
+      $("orders").innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    }
+  }
+
+  // Повторна оплата неоплаченого онлайн-замовлення
+  $("orders").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-pay]");
+    if (!b) return;
+    b.disabled = true;
+    try { goToPayment((await api(`/api/orders/${b.dataset.pay}/pay`, { method: "POST", body: {} })).payment); }
+    catch (err) { alert(err.message); b.disabled = false; }
+  });
+
+  (async () => {
+    try { me = (await api("/api/me")).user; } catch (e) {}
+    me ? showAccount() : toLogin();
+  })();
+</script>
+</body>
+</html>

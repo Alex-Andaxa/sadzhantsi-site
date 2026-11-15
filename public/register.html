@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Реєстрація — Зелений Сад</title>
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header>
+  <div class="container nav">
+    <a href="/" class="logo">🌱 Зелений Сад</a>
+    <div class="nav-actions">
+      <a href="/" class="account-link">← До магазину</a>
+    </div>
+  </div>
+</header>
+
+<main class="container page">
+  <div class="auth-wrap">
+    <div class="panel">
+      <!-- Крок 1: дані -->
+      <div id="step1">
+        <h2>Реєстрація</h2>
+        <form id="regForm">
+          <input name="name" placeholder="Ім'я та прізвище" required autocomplete="name" autofocus>
+          <input name="email" type="email" placeholder="Email" required autocomplete="email">
+          <input name="phone" id="regPhone" autocomplete="tel">
+          <input name="password" type="password" placeholder="Пароль (мін. 6 символів)" required minlength="6" autocomplete="new-password">
+          <p class="error"></p>
+          <button class="btn" type="submit">Продовжити</button>
+        </form>
+        <p class="auth-switch">Вже маєте акаунт? <a href="/login">Увійти</a></p>
+      </div>
+
+      <!-- Крок 2: код з пошти -->
+      <div id="step2" hidden>
+        <h2>Підтвердіть email</h2>
+        <p class="code-note" id="codeNote"></p>
+        <form id="codeForm" style="margin-top:12px">
+          <input name="code" class="code-input" inputmode="numeric" autocomplete="one-time-code"
+                 maxlength="6" pattern="\d{6}" placeholder="000000" required aria-label="6-значний код з листа">
+          <p class="error"></p>
+          <button class="btn" type="submit">Підтвердити й зареєструватися</button>
+        </form>
+        <p class="auth-switch">
+          <button class="link-btn" id="resendBtn" type="button">Надіслати код ще раз</button> ·
+          <button class="link-btn" id="backBtn" type="button">Змінити дані</button>
+        </p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="/common.js"></script>
+<script>
+  const next = new URLSearchParams(location.search).get("next");
+  if (next) document.querySelectorAll(".auth-switch a").forEach(a => a.href += "?next=" + encodeURIComponent(next));
+  api("/api/me").then(({ user }) => { if (user) location.replace(nextUrl()); }).catch(() => {});
+
+  attachPhoneInput($("regPhone"));
+  $("regPhone").placeholder = "Телефон +380 (XX) XXX-XX-XX (необов'язково)";
+
+  let pending = null;
+  let email = "";
+
+  function showStep2(data) {
+    pending = data.pending;
+    email = data.email || email;
+    $("step1").hidden = true;
+    $("step2").hidden = false;
+    $("codeNote").innerHTML = `Ми надіслали 6-значний код на <b>${esc(email)}</b>. Введіть його нижче — код дійсний 10 хвилин.` +
+      (data.dev ? `<br><small>Режим розробки: пошту не налаштовано, код виведено в консоль сервера.</small>` : "");
+    $("codeForm").code.value = "";
+    $("codeForm").code.focus();
+    startResendTimer();
+  }
+
+  let timer;
+  function startResendTimer(sec = 60) {
+    const b = $("resendBtn");
+    clearInterval(timer);
+    b.disabled = true;
+    const tick = () => {
+      b.textContent = sec > 0 ? `Надіслати ще раз (${sec} с)` : "Надіслати код ще раз";
+      if (sec-- <= 0) { clearInterval(timer); b.disabled = false; }
+    };
+    tick();
+    timer = setInterval(tick, 1000);
+  }
+
+  async function submit(form, fn) {
+    const btn = form.querySelector("button[type=submit]");
+    const err = form.querySelector(".error");
+    err.textContent = "";
+    btn.disabled = true;
+    try { await fn(); } catch (e) { err.textContent = e.message; }
+    finally { btn.disabled = false; }
+  }
+
+  $("regForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = e.target;
+    submit(f, async () => {
+      const data = Object.fromEntries(new FormData(f));
+      if (data.phone && !phoneComplete(data.phone)) throw new Error("Вкажіть повний номер телефону або залиште поле порожнім");
+      email = data.email;
+      showStep2(await api("/api/auth/register", { method: "POST", body: data }));
+    });
+  });
+
+  // Код: лише цифри; після 6-ї цифри відправляємо автоматично
+  $("codeForm").code.addEventListener("input", (e) => {
+    e.target.value = e.target.value.replace(/\D/g, "").slice(0, 6);
+    if (e.target.value.length === 6) $("codeForm").requestSubmit();
+  });
+
+  $("codeForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = e.target;
+    submit(f, async () => {
+      await api("/api/auth/register/verify", { method: "POST", body: { token: pending, code: f.code.value } });
+      location.href = nextUrl();
+    });
+  });
+
+  $("resendBtn").onclick = async () => {
+    const err = $("codeForm").querySelector(".error");
+    err.textContent = "";
+    try {
+      const data = await api("/api/auth/resend", { method: "POST", body: { token: pending } });
+      showStep2({ ...data, email });
+    } catch (e) { err.textContent = e.message; }
+  };
+
+  $("backBtn").onclick = () => { $("step2").hidden = true; $("step1").hidden = false; };
+</script>
+</body>
+</html>

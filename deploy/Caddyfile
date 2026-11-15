@@ -1,0 +1,16 @@
+# Caddy — веб-сервер перед сайтом: сам отримує й оновлює HTTPS-сертифікат (Let's Encrypt).
+# Замініть your-domain.com.ua на свій домен (обидва місця) і покладіть файл у /etc/caddy/Caddyfile
+your-domain.com.ua, www.your-domain.com.ua {
+	encode gzip zstd
+	# Фото лотів: великі запити дозволені лише адмінці (до 40 МБ — до 5 фото)
+	request_body {
+		max_size 45MB
+	}
+	reverse_proxy 127.0.0.1:3000
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+	}
+}

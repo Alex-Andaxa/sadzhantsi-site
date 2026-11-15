@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Оформлення замовлення — Зелений Сад</title>
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header>
+  <div class="container nav">
+    <a href="/" class="logo">🌱 Зелений Сад</a>
+    <div class="nav-actions">
+      <span class="nav-actions" id="authLinks">
+        <a href="/login?next=/checkout" class="account-link">Увійти</a>
+      </span>
+      <button class="cart-btn" type="button" data-open-cart>🛒 Кошик<span class="badge cart-count">0</span></button>
+    </div>
+  </div>
+</header>
+
+<main class="container page">
+  <div id="view"><p class="hint">Завантаження…</p></div>
+</main>
+
+<script src="/common.js"></script>
+<script>
+  let me = null;
+  let cfg = null;
+  let picker = null;
+
+  function renderEmpty(msg) {
+    $("view").innerHTML = `<div class="panel result-box">
+      <div class="big">🛒</div><h2>${esc(msg)}</h2>
+      <p><a href="/#catalog" class="btn">До каталогу</a></p></div>`;
+  }
+
+  // Підсумок праворуч (оновлюється при зміні кошика)
+  function renderSummary() {
+    const s = CartUI.summary();
+    if (!s.lines.length) return renderEmpty("Кошик порожній");
+    $("coItems").innerHTML = s.lines.map(({ p, qty }) => `
+      <div class="co-item">
+        ${imgTag(p.images?.[0]?.url, p.name, "thumb")}
+        <div class="co-name">${esc(p.name)}<small>${fmt(p.price)} × ${qty} ${p.in_stock ? "" : "· <span class='stock out'>немає в наявності</span>"}</small></div>
+        <b>${fmt(p.price * qty)}</b>
+      </div>`).join("");
+    $("sumCount").textContent = `${s.count} ${plural(s.count, "товар", "товари", "товарів")} на суму`;
+    $("sumGoods").textContent = fmt(s.total);
+    $("sumTotal").textContent = fmt(s.total);
+    const warn = s.hasOut ? "Видаліть з кошика товари, яких немає в наявності."
+      : s.lack ? `Мінімальна сума замовлення — ${fmt(CartUI.minOrder)}. Додайте ще на ${fmt(s.lack)}.` : "";
+    $("sumWarn").hidden = !warn;
+    $("sumWarn").textContent = warn;
+    $("submitBtn").disabled = !s.ok;
+  }
+
+  function payOptionsHtml() {
+    const opts = [];
+    if (cfg.payment.online) opts.push(`
+      <label class="pay-opt"><input type="radio" name="payment_method" value="online">
+        <span><b>💳 Онлайн-оплата карткою будь-якого банку</b>
+        <small>Visa або Mastercard від будь-якого українського банку (monobank, ПриватБанк, Ощадбанк, ПУМБ, А-Банк, Райффайзен…),
+        а також Apple Pay, Google Pay і Приват24. Через захищену сторінку LiqPay.
+        ${cfg.sandbox ? "<br><b>Тестовий режим:</b> гроші не списуються." : ""}</small></span></label>`);
+    if (cfg.payment.iban) opts.push(`
+      <label class="pay-opt"><input type="radio" name="payment_method" value="iban">
+        <span><b>🏦 Оплата за реквізитами (IBAN)</b>
+        <small>Переказ із застосунку будь-якого банку або в касі. Реквізити та призначення платежу покажемо одразу після оформлення.
+        Відправимо після надходження коштів.</small></span></label>`);
+    if (cfg.payment.cod) opts.push(`
+      <label class="pay-opt"><input type="radio" name="payment_method" value="cod">
+        <span><b>📦 Накладений платіж</b>
+        <small>Оплата при отриманні у відділенні. Перевізник бере комісію за переказ коштів за своїми тарифами.</small></span></label>`);
+    return opts.join("") || `<p class="error">Немає доступних способів оплати. Зв'яжіться з нами.</p>`;
+  }
+
+  function render() {
+    $("view").innerHTML = `
+      <h1>Оформлення замовлення</h1>
+      <div class="checkout">
+        <form id="coForm" novalidate>
+          <section class="panel step">
+            <h2><span class="num">1</span> Контактні дані</h2>
+            ${me ? "" : `<p class="hint" style="margin-top:0">Вже купували в нас? <a href="/login?next=/checkout">Увійдіть</a> — замовлення збережеться в історії покупок.</p>`}
+            <div class="row">
+              <label>Ім'я та прізвище <input name="name" required autocomplete="name" value="${esc(me?.name || "")}"></label>
+              <label>Телефон <input name="phone" id="coPhone" required autocomplete="tel" value="${esc(me?.phone || "")}"></label>
+            </div>
+          </section>
+
+          <section class="panel step">
+            <h2><span class="num">2</span> Доставка</h2>
+            <div class="delivery-box" id="deliveryBox"><p class="hint">Завантаження…</p></div>
+          </section>
+
+          <section class="panel step">
+            <h2><span class="num">3</span> Оплата</h2>
+            <div class="pay-opts">${payOptionsHtml()}</div>
+          </section>
+
+          <section class="panel step">
+            <h2><span class="num">4</span> Коментар</h2>
+            <textarea name="comment" rows="2" maxlength="1000" placeholder="Побажання до замовлення (необов'язково)"></textarea>
+          </section>
+        </form>
+
+        <aside class="panel summary">
+          <h2 style="margin-top:0">Разом</h2>
+          <div class="co-items" id="coItems"></div>
+          <p style="margin:10px 0"><button type="button" class="link-btn" data-open-cart>Редагувати кошик</button></p>
+          <div class="summary-row"><span id="sumCount"></span><span id="sumGoods"></span></div>
+          <div class="summary-row"><span>Доставка</span><span class="hint">за тарифами перевізника</span></div>
+          <div class="summary-row summary-total"><span>До сплати</span><b id="sumTotal"></b></div>
+          <p class="min-note" id="sumWarn" hidden style="margin:12px 0 0"></p>
+          <p class="error" id="coError"></p>
+          <button class="btn" type="submit" form="coForm" id="submitBtn">Замовлення підтверджую</button>
+          <p class="hint" style="font-size:.82rem;margin:10px 0 0">Підтверджуючи замовлення, ви погоджуєтесь з умовами доставки та оплати.</p>
+        </aside>
+      </div>`;
+
+    // Перший доступний спосіб оплати обрано за замовчуванням
+    const first = document.querySelector("input[name=payment_method]");
+    if (first) first.checked = true;
+    attachPhoneInput($("coPhone"));
+    renderSummary();
+    deliveryPicker($("deliveryBox"), { city: me?.city, region: me?.region }).then((p) => (picker = p));
+
+    $("coForm").addEventListener("submit", submit);
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    const f = $("coForm");
+    const err = $("coError");
+    err.textContent = "";
+    const data = Object.fromEntries(new FormData(f));
+    try {
+      if (!data.name?.trim()) throw new Error("Вкажіть ім'я та прізвище");
+      if (!phoneComplete(data.phone)) throw new Error("Вкажіть повний номер телефону: +380 (XX) XXX-XX-XX");
+      if (!picker) throw new Error("Зачекайте, завантажується список відділень");
+      var dlv = picker.value();
+      if (!data.payment_method) throw new Error("Оберіть спосіб оплати");
+    } catch (e2) { err.textContent = e2.message; return; }
+
+    const btn = $("submitBtn");
+    btn.disabled = true;
+    btn.textContent = data.payment_method === "online" ? "Переходимо до оплати…" : "Оформлюємо…";
+    try {
+      const s = CartUI.summary();
+      const order = await api("/api/orders", {
+        method: "POST",
+        body: { ...data, ...dlv, items: s.lines.map(({ p, qty }) => ({ id: p.id, qty })) },
+      });
+      Cart.set({});
+      CartUI.badge();
+      if (order.payment) return goToPayment(order.payment);
+      location.href = `/payment?order=${order.id}&token=${order.token}`;
+    } catch (e3) {
+      err.textContent = e3.message;
+      btn.disabled = false;
+      btn.textContent = "Замовлення підтверджую";
+    }
+  }
+
+  // Кошик змінили у вікні кошика — оновлюємо підсумок
+  document.addEventListener("cart:change", () => { if ($("coItems")) renderSummary(); });
+
+  (async () => {
+    try {
+      [{ user: me }, cfg] = await Promise.all([api("/api/me"), api("/api/checkout/config"), CartUI.load()]);
+    } catch (e) { return renderEmpty("Не вдалося завантажити дані: " + e.message); }
+    if (me) $("authLinks").innerHTML = `<a href="/account" class="account-link">👤 ${esc(me.name.split(" ")[0])}</a>`;
+    if (!CartUI.summary().lines.length) return renderEmpty("Кошик порожній");
+    render();
+  })();
+</script>
+</body>
+</html>

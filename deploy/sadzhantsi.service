@@ -1,0 +1,24 @@
+# Служба systemd: сайт запускається разом із сервером і перезапускається після збою.
+# Встановлення: sudo cp deploy/sadzhantsi.service /etc/systemd/system/ && sudo systemctl enable --now sadzhantsi
+[Unit]
+Description=Zelenyi Sad shop (Node.js)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=shop
+WorkingDirectory=/home/shop/sadzhantsi-site
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node --env-file-if-exists=.env --no-warnings=ExperimentalWarning server.js
+Restart=always
+RestartSec=5
+# Захист: служба не може змінювати систему, лише свою папку data/
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/shop/sadzhantsi-site/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

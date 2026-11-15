@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Саджанець — Зелений Сад</title>
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header>
+  <div class="container nav">
+    <a href="/" class="logo">🌱 Зелений Сад</a>
+    <nav class="nav-links">
+      <a href="/#catalog">Каталог</a>
+    </nav>
+    <div class="nav-actions">
+      <span class="nav-actions" id="authLinks">
+        <a href="/login" class="account-link">Увійти</a>
+        <a href="/register" class="account-link hide-sm">Реєстрація</a>
+      </span>
+      <button class="cart-btn" type="button" data-open-cart>🛒 Кошик<span class="badge cart-count">0</span></button>
+    </div>
+  </div>
+</header>
+
+<main class="container page">
+  <div id="view"><p class="hint">Завантаження…</p></div>
+</main>
+
+<footer>© <span id="year"></span> Зелений Сад. Усі права захищено.</footer>
+
+<script src="/common.js"></script>
+<script>
+  $("year").textContent = new Date().getFullYear();
+
+  let p = null;
+  let idx = 0;
+  let me = null;
+  let reviews = [];
+  let recommendations = [];
+
+  // ---------- Відгуки ----------
+  function renderReviews() {
+    const mine = reviews.find(r => r.mine);
+    const summary = reviews.length
+      ? `<div class="rating-summary"><span class="rating-big">${p.rating}</span>
+           <div>${starsHtml(p.rating)}<br><small class="hint">${reviews.length} ${plural(reviews.length, "відгук", "відгуки", "відгуків")}</small></div></div>`
+      : `<p class="hint" style="margin-top:0">Відгуків ще немає — будьте першим!</p>`;
+
+    const form = me ? `
+      <form id="reviewForm" style="margin:8px 0 6px">
+        <b>${mine ? "Ваш відгук (можна змінити)" : "Залишити відгук"}</b>
+        <div class="rating-input" role="radiogroup" aria-label="Оцінка">
+          ${[5, 4, 3, 2, 1].map(n => `
+            <input type="radio" name="rating" id="star${n}" value="${n}" ${mine?.rating === n ? "checked" : ""}>
+            <label for="star${n}" title="${n} з 5">★</label>`).join("")}
+        </div>
+        <textarea name="text" rows="3" maxlength="2000" placeholder="Як прижився саджанець, якість пакування, враження…">${esc(mine?.text || "")}</textarea>
+        <p class="error"></p>
+        <div class="row" style="flex-wrap:nowrap">
+          <button class="btn-green" type="submit" style="flex:0 0 auto">${mine ? "Оновити відгук" : "Надіслати відгук"}</button>
+          ${mine ? `<button class="btn-sm danger" type="button" data-del="${mine.id}" style="flex:0 0 auto">Видалити</button>` : ""}
+        </div>
+      </form>`
+      : `<p class="hint"><a href="/login?next=${encodeURIComponent(location.pathname + location.search + "#reviews")}">Увійдіть</a>, щоб залишити відгук.</p>`;
+
+    const list = reviews.map(r => `
+      <div class="review">
+        <div class="review-head">
+          <div><b>${esc(r.author)}</b> ${r.verified ? `<span class="verified">✓ Купив(-ла) цей лот</span>` : ""}</div>
+          <small class="hint">${fmtDate(r.updated_at || r.created_at).split(",")[0]}${r.updated_at ? " (змінено)" : ""}</small>
+        </div>
+        ${starsHtml(r.rating, { small: true })}
+        ${r.text ? `<p>${esc(r.text)}</p>` : ""}
+        ${me?.is_admin && !r.mine ? `<button class="btn-sm danger" data-del="${r.id}" style="margin-top:6px">Видалити (адмін)</button>` : ""}
+      </div>`).join("");
+
+    $("reviewsBox").innerHTML = summary + form + list;
+
+    const f = $("reviewForm");
+    if (f) f.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const err = f.querySelector(".error");
+      const rating = Number(new FormData(f).get("rating"));
+      if (!rating) { err.textContent = "Поставте оцінку — оберіть від 1 до 5 зірок"; return; }
+      f.querySelector("button[type=submit]").disabled = true;
+      try {
+        await api(`/api/products/${p.id}/reviews`, { method: "POST", body: { rating, text: f.text.value } });
+        await load();
+        location.hash = "reviews";
+      } catch (e2) {
+        err.textContent = e2.message;
+        f.querySelector("button[type=submit]").disabled = false;
+      }
+    });
+  }
+
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-del]");
+    if (!b || !confirm("Видалити цей відгук?")) return;
+    try {
+      await api(`/api/reviews/${b.dataset.del}`, { method: "DELETE", body: {} });
+      await load();
+    } catch (err) { alert(err.message); }
+  });
+
+  function renderGallery() {
+    const imgs = p.images;
+    const main = imgs.length
+      ? `<img src="${esc(imgs[idx].url)}" alt="${esc(p.name)} — фото ${idx + 1}">`
+      : imgTag(null);
+    const arrows = imgs.length > 1 ? `
+      <button class="gal-btn prev" data-step="-1" aria-label="Попереднє фото">‹</button>
+      <button class="gal-btn next" data-step="1" aria-label="Наступне фото">›</button>` : "";
+    $("pgMain").innerHTML = main + arrows;
+    $("pgThumbs").innerHTML = imgs.length > 1 ? imgs.map((im, i) => `
+      <button class="${i === idx ? "on" : ""}" data-i="${i}" aria-label="Фото ${i + 1}">
+        <img src="${esc(im.url)}" alt="">
+      </button>`).join("") : "";
+  }
+
+  function render() {
+    document.title = `${p.name} — Зелений Сад`;
+    $("view").innerHTML = `
+      <div class="crumbs"><a href="/#catalog">Каталог</a> › ${esc(p.category_name)} › ${esc(p.name)}</div>
+      <div class="product">
+        <div>
+          <div class="pg-main" id="pgMain"></div>
+          <div class="pg-thumbs" id="pgThumbs"></div>
+        </div>
+        <div>
+          <span class="tag">${esc(p.category_name)}</span>
+          <h1>${esc(p.name)}</h1>
+          <p style="margin:0 0 6px">Код лота: <span class="sku" style="font-size:.95rem">${esc(p.sku)}</span></p>
+          <a href="#reviews" class="card-link" style="text-decoration:none">${starsHtml(p.rating, { count: p.reviews_count })}</a><br>
+          <span class="stock ${p.in_stock ? "in" : "out"}">${p.in_stock ? "✓ В наявності" : "✕ Немає в наявності"}</span>
+          <span class="price">${fmt(p.price)}</span>
+          ${p.in_stock ? `
+            <div class="buy-row">
+              <input type="number" id="qty" class="qty-input" value="1" min="1" max="999" aria-label="Кількість">
+              <button class="btn" id="addBtn">🛒 Купити</button>
+            </div>`
+          : `<p class="hint">Цього саджанця зараз немає в наявності. Зателефонуйте нам — підкажемо, коли з'явиться.</p>`}
+          <div class="panel" style="margin-top:20px">
+            <b>🚚 Доставка</b>
+            <p class="hint" style="margin:6px 0 0">Нова Пошта або Укрпошта, 1–3 дні. Відділення обираєте під час оформлення замовлення.</p>
+          </div>
+        </div>
+      </div>
+
+      <section id="description">
+        <h2 class="section-title">Опис</h2>
+        <div class="panel">
+          ${p.description
+            ? `<p class="desc" style="margin:0">${esc(p.description)}</p>`
+            : `<p class="hint" style="margin:0">Опис ще не додано.</p>`}
+        </div>
+      </section>
+
+      <section id="reviews">
+        <h2 class="section-title">Відгуки</h2>
+        <div class="panel" id="reviewsBox"></div>
+      </section>
+
+      ${recommendations.length ? `
+        <section>
+          <h2 class="section-title">Вам також може сподобатися</h2>
+          <div class="recs">${recommendations.map(miniCardHtml).join("")}</div>
+        </section>` : ""}`;
+    renderGallery();
+    renderReviews();
+
+    $("pgMain").addEventListener("click", (e) => {
+      const step = e.target.dataset.step;
+      if (!step) return;
+      idx = (idx + Number(step) + p.images.length) % p.images.length;
+      renderGallery();
+    });
+    $("pgThumbs").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-i]");
+      if (!b) return;
+      idx = Number(b.dataset.i);
+      renderGallery();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (p.images.length < 2 || ["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) return;
+      if (e.key === "ArrowLeft") { idx = (idx - 1 + p.images.length) % p.images.length; renderGallery(); }
+      if (e.key === "ArrowRight") { idx = (idx + 1) % p.images.length; renderGallery(); }
+    });
+
+    if (p.in_stock) {
+      $("addBtn").onclick = () => {
+        const qty = Math.min(999, Math.max(1, parseInt($("qty").value, 10) || 1));
+        CartUI.add(p.id, qty);
+      };
+    }
+  }
+
+  async function load() {
+    const id = new URLSearchParams(location.search).get("id");
+    const data = await api(`/api/products/${encodeURIComponent(id || "")}`);
+    const first = !p;
+    p = data.product;
+    reviews = data.reviews;
+    if (first) { recommendations = data.recommendations; render(); }
+    else {
+      renderReviews();
+      // оновлюємо зірки в шапці лота
+      document.querySelector(".product a[href='#reviews']").innerHTML = starsHtml(p.rating, { count: p.reviews_count });
+    }
+  }
+
+  (async () => {
+    try { me = (await api("/api/me")).user; } catch (e) {}
+    if (me) $("authLinks").innerHTML = `<a href="/account" class="account-link">👤 ${esc(me.name.split(" ")[0])}</a>`;
+    try {
+      await load();
+      if (location.hash === "#reviews") $("reviews").scrollIntoView();
+    } catch (err) {
+      $("view").innerHTML = `<div class="panel"><h2>Лот не знайдено</h2>
+        <p>${esc(err.message)}</p><p><a href="/#catalog">← Повернутися до каталогу</a></p></div>`;
+    }
+  })();
+</script>
+</body>
+</html>

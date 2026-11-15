@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вхід — Зелений Сад</title>
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header>
+  <div class="container nav">
+    <a href="/" class="logo">🌱 Зелений Сад</a>
+    <div class="nav-actions">
+      <a href="/" class="account-link">← До магазину</a>
+    </div>
+  </div>
+</header>
+
+<main class="container page">
+  <div class="auth-wrap">
+    <div class="panel">
+      <h2>Вхід</h2>
+      <form id="authForm">
+        <input name="email" type="email" placeholder="Email" required autocomplete="email" autofocus>
+        <input name="password" type="password" placeholder="Пароль" required autocomplete="current-password">
+        <p class="error"></p>
+        <button class="btn" type="submit">Увійти</button>
+      </form>
+      <p class="auth-switch">Ще немає акаунта? <a href="/register">Зареєструватися</a></p>
+    </div>
+  </div>
+</main>
+
+<script src="/common.js"></script>
+<script>
+  // Посилання на іншу форму зберігає адресу повернення
+  const next = new URLSearchParams(location.search).get("next");
+  if (next) document.querySelectorAll(".auth-switch a").forEach(a => a.href += "?next=" + encodeURIComponent(next));
+
+  // Уже увійшли — одразу далі
+  api("/api/me").then(({ user }) => { if (user) location.replace(nextUrl()); }).catch(() => {});
+
+  const form = $("authForm");
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector("button[type=submit]");
+    const errEl = form.querySelector(".error");
+    errEl.textContent = "";
+    btn.disabled = true;
+    try {
+      await api("/api/auth/login", { method: "POST", body: Object.fromEntries(new FormData(form)) });
+      location.href = nextUrl();
+    } catch (err) {
+      errEl.textContent = err.message;
+      btn.disabled = false;
+    }
+  });
+</script>
+</body>
+</html>

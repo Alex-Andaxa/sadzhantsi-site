@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Зелений Сад — саджанці</title>
+<meta name="description" content="Саджанці фруктових, ягідних та декоративних рослин з доставкою по Україні.">
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header>
+  <div class="container nav">
+    <a href="#" class="logo">🌱 Зелений Сад</a>
+    <nav class="nav-links">
+      <a href="#catalog">Каталог</a>
+      <a href="#about">Про нас</a>
+      <a href="#contacts">Контакти</a>
+    </nav>
+    <div class="nav-actions">
+      <span class="nav-actions" id="authLinks">
+        <a href="/login" class="account-link">Увійти</a>
+        <a href="/register" class="account-link hide-sm">Реєстрація</a>
+      </span>
+      <button class="cart-btn" type="button" data-open-cart>🛒 Кошик<span class="badge cart-count">0</span></button>
+    </div>
+  </div>
+</header>
+
+<div class="hero">
+  <div class="container">
+    <h1>Саджанці для вашого саду</h1>
+    <p>Фруктові дерева, ягідні кущі та декоративні рослини з власного розсадника. Висаджуйте з упевненістю: кожен саджанець адаптований до українського клімату.</p>
+    <a href="#catalog" class="btn">Перейти до каталогу</a>
+  </div>
+</div>
+
+<div class="container">
+  <div class="features">
+    <div class="feature"><b>🚚 Доставка по Україні</b><span>Нова Пошта та Укрпошта, 1–3 дні</span></div>
+    <div class="feature"><b>🌿 Власний розсадник</b><span>Вирощуємо самі понад 10 років</span></div>
+    <div class="feature"><b>✅ Гарантія приживлення</b><span>Замінимо, якщо саджанець не прийметься</span></div>
+  </div>
+</div>
+
+<section id="catalog">
+  <div class="container">
+    <h2>Каталог</h2>
+    <div class="catalog-tools">
+      <input type="search" id="catalogSearch" placeholder="Пошук за назвою або кодом лота (напр. ZS-00012)" aria-label="Пошук у каталозі">
+    </div>
+    <div class="filters" id="filters"></div>
+    <div class="grid" id="products"></div>
+  </div>
+</section>
+
+<section id="about" class="about">
+  <div class="container two-col">
+    <div>
+      <h2>Про нас</h2>
+      <p>«Зелений Сад» — сімейний розсадник. Ми вирощуємо саджанці у відкритому ґрунті та контейнерах, ретельно відбираємо сорти й пакуємо кожну рослину так, щоб вона доїхала до вас свіжою.</p>
+      <p>Найкращий час для посадки — весна (березень–квітень) та осінь (жовтень–листопад).</p>
+    </div>
+    <div id="contacts">
+      <h2>Контакти</h2>
+      <ul class="contacts">
+        <li>📞 +38 (000) 000-00-00</li>
+        <li>✉️ info@example.com</li>
+        <li>📍 Україна</li>
+        <li>🕘 Пн–Сб, 9:00–18:00</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer>© <span id="year"></span> Зелений Сад. Усі права захищено.</footer>
+
+
+
+<script src="/common.js"></script>
+<script>
+  let products = [];
+  let categories = [];
+  let me = null;
+  let searchQ = "";
+  const catName = (id) => categories.find(c => c.id === id)?.name || "";
+  const productUrl = (p) => `/product?id=${p.id}`;
+
+  // ---------- Фільтри ----------
+  let currentCat = 0; // 0 = усі
+  function renderFilters() {
+    const all = [{ id: 0, name: "Усі" }, ...categories];
+    $("filters").innerHTML = all.map(c =>
+      `<button class="filter ${c.id === currentCat ? "active" : ""}" data-cat="${c.id}">${esc(c.name)}</button>`
+    ).join("");
+  }
+  $("filters").addEventListener("click", (e) => {
+    const cat = e.target.dataset.cat;
+    if (cat === undefined) return;
+    currentCat = Number(cat);
+    renderFilters();
+    renderProducts();
+  });
+
+  // ---------- Картки ----------
+  // Пошук: за кодом (точний або частковий) чи за назвою/описом; діє по всіх категоріях
+  let searchTimer;
+  $("catalogSearch").addEventListener("input", (e) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => { searchQ = e.target.value.trim().toLowerCase(); renderProducts(); }, 150);
+  });
+
+  function renderProducts() {
+    let list = currentCat === 0 ? products : products.filter(p => p.category_id === currentCat);
+    if (searchQ) {
+      const q = searchQ.replace(/\s+/g, "-");
+      list = products.filter(p =>
+        (p.sku || "").toLowerCase().includes(q) ||
+        p.name.toLowerCase().includes(searchQ) ||
+        p.description.toLowerCase().includes(searchQ));
+      // точний збіг коду — першим
+      list.sort((a, b) => ((b.sku || "").toLowerCase() === q) - ((a.sku || "").toLowerCase() === q));
+    }
+    if (!list.length) {
+      $("products").innerHTML = `<div class="empty">${searchQ ? "Нічого не знайдено за цим запитом" : "У цій категорії поки немає саджанців"}</div>`;
+      return;
+    }
+    $("products").innerHTML = list.map(p => `
+      <div class="card ${p.in_stock ? "" : "out"}">
+        <a href="${productUrl(p)}" class="card-link card-img" data-gal="${p.id}" aria-label="${esc(p.name)}">${galleryHtml(p, 0)}</a>
+        <div class="card-body">
+          <span class="tag">${esc(catName(p.category_id))} <span class="sku">· ${esc(p.sku)}</span></span>
+          <a href="${productUrl(p)}" class="card-link"><h3>${esc(p.name)}</h3></a>
+          ${p.reviews_count ? `<a href="${productUrl(p)}#reviews" class="card-link">${starsHtml(p.rating, { count: p.reviews_count, small: true })}</a>` : ""}
+          <span class="stock ${p.in_stock ? "in" : "out"}">${p.in_stock ? "✓ В наявності" : "✕ Немає в наявності"}</span>
+          <p>${esc(p.description)}</p>
+          <div class="card-footer">
+            <span class="price">${fmt(p.price)}</span>
+            ${p.in_stock
+              ? `<button class="add-btn" data-id="${p.id}">У кошик</button>`
+              : `<button class="add-btn" disabled>Немає</button>`}
+          </div>
+        </div>
+      </div>`).join("");
+  }
+
+  // Галерея фото в картці
+  function galleryHtml(p, idx) {
+    const imgs = p.images || [];
+    if (!imgs.length) return imgTag(null);
+    const arrows = imgs.length > 1 ? `
+      <button class="gal-btn prev" data-step="-1" aria-label="Попереднє фото">‹</button>
+      <button class="gal-btn next" data-step="1" aria-label="Наступне фото">›</button>
+      <div class="gal-dots">${imgs.map((_, i) => `<i class="${i === idx ? "on" : ""}"></i>`).join("")}</div>` : "";
+    return imgTag(imgs[idx].url, p.name) + arrows;
+  }
+  const galPos = {};
+
+  $("products").addEventListener("click", (e) => {
+    const step = e.target.dataset.step;
+    if (step) {
+      e.preventDefault(); // стрілки всередині посилання не відкривають сторінку лота
+      const box = e.target.closest("[data-gal]");
+      const p = products.find(x => x.id == box.dataset.gal);
+      const n = p.images.length;
+      galPos[p.id] = ((galPos[p.id] || 0) + Number(step) + n) % n;
+      box.innerHTML = galleryHtml(p, galPos[p.id]);
+      return;
+    }
+    const id = e.target.dataset.id;
+    if (!id) return;
+    CartUI.add(Number(id));
+  });
+
+  $("year").textContent = new Date().getFullYear();
+
+  async function init() {
+    try {
+      const [catalog, session] = await Promise.all([api("/api/catalog"), api("/api/me")]);
+      products = catalog.products;
+      categories = catalog.categories;
+      me = session.user;
+    } catch (err) {
+      $("products").innerHTML = `<div class="empty">Не вдалося завантажити каталог: ${esc(err.message)}</div>`;
+    }
+    if (me) $("authLinks").innerHTML = `<a href="/account" class="account-link">👤 ${esc(me.name.split(" ")[0])}</a>`;
+    renderFilters();
+    renderProducts();
+  }
+  init();
+</script>
+</body>
+</html>

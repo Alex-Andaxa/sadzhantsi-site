@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Замовлення — Зелений Сад</title>
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header>
+  <div class="container nav">
+    <a href="/" class="logo">🌱 Зелений Сад</a>
+    <div class="nav-actions">
+      <a href="/" class="account-link">До магазину</a>
+      <button class="cart-btn" type="button" data-open-cart>🛒 Кошик<span class="badge cart-count">0</span></button>
+    </div>
+  </div>
+</header>
+
+<main class="container page">
+  <div class="panel result-box" id="view"><p class="hint">Завантаження…</p></div>
+</main>
+
+<script src="/common.js"></script>
+<script>
+  const qs = new URLSearchParams(location.search);
+  const orderId = qs.get("order");
+  const token = qs.get("token") || "";
+  let polls = 0;
+
+  // Реквізити для переказу: кожне поле можна скопіювати
+  function requisitesHtml(r) {
+    const row = (label, value, copy = value) => `
+      <div class="req-row">
+        <div><small class="hint">${label}</small><div class="req-val">${esc(value)}</div></div>
+        ${copy ? `<button type="button" class="btn-sm" data-copy="${esc(copy)}">Копіювати</button>` : ""}
+      </div>`;
+    return `
+      <div class="panel" style="text-align:left;margin:0 0 18px">
+        <h3 style="margin:0 0 8px">Реквізити для оплати</h3>
+        ${row("Отримувач", r.recipient)}
+        ${row("IBAN", r.iban.replace(/(.{4})/g, "$1 ").trim(), r.iban)}
+        ${row("ЄДРПОУ / РНОКПП", r.code)}
+        ${r.bank ? row("Банк", r.bank, "") : ""}
+        ${row("Сума", fmt(r.amount), String(r.amount))}
+        ${row("Призначення платежу", r.purpose)}
+        <p class="hint" style="margin:10px 0 0">Вкажіть призначення платежу точно — так ми швидше знайдемо ваш переказ.
+          Зазвичай кошти надходять протягом робочого дня.</p>
+      </div>`;
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-copy]");
+    if (b) copyText(b, b.dataset.copy);
+  });
+
+  async function load() {
+    let data;
+    try {
+      data = await api(`/api/orders/${encodeURIComponent(orderId)}/status?token=${encodeURIComponent(token)}`);
+    } catch (err) {
+      $("view").innerHTML = `<div class="big">⚠️</div><h2>Не вдалося показати замовлення</h2><p>${esc(err.message)}</p>`;
+      return;
+    }
+    const o = data.order;
+    const online = o.payment_method === "online";
+    const st = o.payment_status;
+    const iban = o.payment_method === "iban";
+    const head = iban
+      ? (st === "paid"
+          ? ["✅", "Оплату отримано — дякуємо!", "Ми зателефонуємо для підтвердження відправки."]
+          : ["🏦", "Замовлення прийнято — залишилось оплатити", "Перекажіть суму за реквізитами нижче з застосунку будь-якого банку. Відправимо після надходження коштів."])
+      : !online
+      ? ["✅", "Дякуємо! Замовлення прийнято", "Оплата — при отриманні у відділенні. Ми зателефонуємо для підтвердження."]
+      : st === "paid"
+        ? ["✅", "Оплату отримано — дякуємо!", "Замовлення оплачено. Ми зателефонуємо для підтвердження відправки."]
+        : st === "failed"
+          ? ["❌", "Оплата не пройшла", "Кошти не списано. Спробуйте ще раз або оберіть іншу картку."]
+          : st === "refunded"
+            ? ["↩️", "Кошти повернено", ""]
+            : ["⏳", "Очікуємо підтвердження оплати", "Це може зайняти до хвилини. Сторінка оновиться сама."];
+
+    $("view").innerHTML = `
+      <div class="big">${head[0]}</div>
+      <h2>${head[1]}</h2>
+      <p>${head[2]}</p>
+      <div style="text-align:left;margin:18px 0" class="panel">
+        <div class="summary-row"><span>Замовлення</span><b>№${o.id}</b></div>
+        <div class="summary-row"><span>Сума</span><b>${fmt(o.total)}</b></div>
+        <div class="summary-row"><span>Оплата</span>
+          <span>${esc(PAY_METHOD[o.payment_method])} · <span class="pay-badge" data-s="${esc(st)}">${esc(PAY_STATUS[st] || st)}</span></span></div>
+        ${o.payment_info ? `<div class="summary-row"><span></span><small class="hint">${esc(o.payment_info)}</small></div>` : ""}
+        <div class="summary-row"><span>Доставка</span><span style="text-align:right">${esc(DELIVERY[o.delivery] || "")}<br><small class="hint">${esc(o.city)}<br>${esc(o.branch)}</small></span></div>
+      </div>
+      ${data.requisites && st !== "paid" && st !== "refunded" ? requisitesHtml(data.requisites) : ""}
+      ${data.can_pay && st !== "processing" && st !== "awaiting" ? `<p><button class="btn" id="payBtn">💳 Оплатити ${fmt(o.total)}</button></p>` : ""}
+      ${data.can_pay && st === "awaiting" && polls >= 8 ? `<p class="hint">Не завершили оплату? <button class="link-btn" id="payBtn">Перейти до оплати ще раз</button></p>` : ""}
+      <p><a href="/account">Мої замовлення</a> · <a href="/#catalog">Продовжити покупки</a></p>`;
+
+    const pb = $("payBtn");
+    if (pb) pb.onclick = async () => {
+      pb.disabled = true;
+      try { goToPayment((await api(`/api/orders/${o.id}/pay`, { method: "POST", body: { token } })).payment); }
+      catch (err) { alert(err.message); pb.disabled = false; }
+    };
+
+    // Поки оплата в процесі — перевіряємо статус ще кілька разів
+    if (online && (st === "awaiting" || st === "processing") && polls < 20) {
+      polls++;
+      setTimeout(load, 3000);
+    }
+  }
+  load();
+</script>
+</body>
+</html>
