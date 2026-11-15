@@ -85,8 +85,10 @@ function parseCookies(header = "") {
 }
 
 function setSessionCookie(res, token, maxAgeSec) {
+  // Secure лише при https (за Caddy це визначає X-Forwarded-Proto) — щоб вхід працював і на http://IP для демонстрації
+  const secure = isProd && res.req?.secure;
   res.setHeader("Set-Cookie",
-    `sid=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${isProd ? "; Secure" : ""}`);
+    `sid=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${secure ? "; Secure" : ""}`);
 }
 
 function createSession(res, userId) {

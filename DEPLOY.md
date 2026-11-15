@@ -152,6 +152,17 @@ journalctl -u sadzhantsi -f      # журнал сайту (вихід: Ctrl+C)
 
 ## 6. HTTPS і домен
 
+**Поки немає домену** (демонстрація за IP, без HTTPS):
+
+```bash
+cp /home/shop/sadzhantsi-site/deploy/Caddyfile.ip /etc/caddy/Caddyfile
+systemctl reload caddy
+```
+
+Сайт відкривається за `http://IP_СЕРВЕРА`. `SITE_URL` у `.env` поки залиште порожнім. Онлайн-оплату LiqPay вмикайте лише з доменом і HTTPS.
+
+**З доменом:**
+
 ```bash
 cp /home/shop/sadzhantsi-site/deploy/Caddyfile /etc/caddy/Caddyfile
 nano /etc/caddy/Caddyfile        # замініть your-domain.com.ua на свій домен
