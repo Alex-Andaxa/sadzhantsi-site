@@ -1,6 +1,6 @@
 # Caddy — веб-сервер перед сайтом: сам отримує й оновлює HTTPS-сертифікат (Let's Encrypt).
-# Замініть your-domain.com.ua на свій домен (обидва місця) і покладіть файл у /etc/caddy/Caddyfile
-your-domain.com.ua, www.your-domain.com.ua {
+# Встановлення: cp deploy/Caddyfile /etc/caddy/Caddyfile && systemctl reload caddy
+yahidnyk.com {
 	encode gzip zstd
 	# Фото лотів: великі запити дозволені лише адмінці (до 40 МБ — до 5 фото)
 	request_body {
@@ -13,4 +13,14 @@ your-domain.com.ua, www.your-domain.com.ua {
 		Referrer-Policy "strict-origin-when-cross-origin"
 		X-Frame-Options "SAMEORIGIN"
 	}
+}
+
+# www.yahidnyk.com → yahidnyk.com
+www.yahidnyk.com {
+	redir https://yahidnyk.com{uri} permanent
+}
+
+# Звернення за IP → на домен
+http://178.95.255.10 {
+	redir https://yahidnyk.com{uri} permanent
 }

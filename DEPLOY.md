@@ -118,7 +118,7 @@ nano .env
 У `.env` обов'язково заповніть:
 
 ```ini
-SITE_URL=https://your-domain.com.ua
+SITE_URL=https://yahidnyk.com
 
 # Пошта для кодів підтвердження (Gmail: пароль застосунку, не звичайний пароль)
 SMTP_HOST=smtp.gmail.com
@@ -165,11 +165,11 @@ systemctl reload caddy
 
 ```bash
 cp /home/shop/sadzhantsi-site/deploy/Caddyfile /etc/caddy/Caddyfile
-nano /etc/caddy/Caddyfile        # замініть your-domain.com.ua на свій домен
+
 systemctl reload caddy
 ```
 
-Caddy сам отримає безкоштовний сертифікат. Відкрийте `https://your-domain.com.ua` — сайт має працювати із замочком 🔒.
+Caddy сам отримає безкоштовний сертифікат. Відкрийте `https://yahidnyk.com` — сайт має працювати із замочком 🔒.
 
 ## 7. Резервні копії (щодня о 3:00)
 
