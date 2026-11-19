@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Каталог саджанців — Ягідник</title>
+<meta name="description" content="Каталог саджанців фруктових, ягідних та декоративних рослин з доставкою по Україні.">
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="/img/logo.svg" type="image/svg+xml">
+</head>
+<body>
+
+<header>
+  <div class="container nav">
+    <a href="/" class="logo"><img src="/img/logo.svg" alt="" class="logo-icon">Ягідник</a>
+    <nav class="nav-links">
+      <a href="/catalog">Каталог</a>
+      <a href="/about">Про нас</a>
+    </nav>
+    <div class="nav-actions">
+      <span class="nav-actions" id="authLinks">
+        <a href="/login" class="account-link" aria-label="Увійти"><i data-ic="user"></i><span class="auth-label">Увійти</span></a>
+        <a href="/register" class="account-link hide-sm">Реєстрація</a>
+      </span>
+      <button class="cart-btn" type="button" data-open-cart aria-label="Кошик"><i data-ic="cart"></i><span class="cart-label">Кошик</span><span class="badge cart-count">0</span></button>
+    </div>
+  </div>
+</header>
+
+<main class="container page">
+  <div class="crumbs"><a href="/">Головна</a> › <span id="crumbCat">Каталог</span></div>
+  <div class="catalog-layout">
+    <!-- Бокова панель: пошук, категорії, фільтри -->
+    <aside class="catalog-side" id="side">
+      <div class="side-block">
+        <input type="search" id="q" placeholder="Пошук саджанців" aria-label="Пошук у каталозі" autocomplete="off">
+      </div>
+      <div class="side-block">
+        <p class="side-title">Категорії</p>
+        <ul class="side-cats" id="cats"></ul>
+      </div>
+      <div class="side-block">
+        <p class="side-title">Ціна, грн</p>
+        <div class="price-range">
+          <input type="number" id="priceMin" min="0" step="1" placeholder="від" aria-label="Ціна від">
+          <span>—</span>
+          <input type="number" id="priceMax" min="0" step="1" placeholder="до" aria-label="Ціна до">
+        </div>
+      </div>
+      <div class="side-block">
+        <label class="check"><input type="checkbox" id="onlyStock"> Лише в наявності</label>
+      </div>
+      <button class="btn-sm" type="button" id="resetFilters" hidden><i data-ic="x"></i> Скинути фільтри</button>
+    </aside>
+
+    <section class="catalog-main" aria-labelledby="catTitle">
+      <div class="catalog-head">
+        <div>
+          <h1 id="catTitle">Усі саджанці</h1>
+          <small class="hint" id="count"></small>
+        </div>
+        <div class="catalog-controls">
+          <button class="btn-sm side-toggle" type="button" id="sideToggle" aria-controls="side" aria-expanded="false"><i data-ic="filter"></i> Фільтри</button>
+          <select id="sort" aria-label="Сортування">
+            <option value="default">Спершу в наявності</option>
+            <option value="cheap">Від дешевих до дорогих</option>
+            <option value="expensive">Від дорогих до дешевих</option>
+            <option value="rating">За рейтингом</option>
+            <option value="new">Новинки</option>
+          </select>
+        </div>
+      </div>
+      <div class="sub-chips" id="subChips" hidden></div>
+      <div class="grid catalog-grid" id="products"><p class="hint">Завантаження…</p></div>
+    </section>
+  </div>
+</main>
+
+<footer id="siteFooter" class="site-footer"></footer>
+
+<script src="/common.js"></script>
+<script>
+  let products = [];
+  let categories = [];
+  // Стан фільтрів зберігається в адресі: /catalog?cat=2&q=яблуня — посиланням можна поділитися
+  const params = new URLSearchParams(location.search);
+  const state = {
+    cat: Number(params.get("cat")) || 0,
+    q: params.get("q") || "",
+    min: params.get("min") || "",
+    max: params.get("max") || "",
+    stock: params.get("stock") === "1",
+    sort: params.get("sort") || "default",
+  };
+
+  function syncUrl() {
+    const p = new URLSearchParams();
+    if (state.cat) p.set("cat", state.cat);
+    if (state.q) p.set("q", state.q);
+    if (state.min) p.set("min", state.min);
+    if (state.max) p.set("max", state.max);
+    if (state.stock) p.set("stock", "1");
+    if (state.sort !== "default") p.set("sort", state.sort);
+    const qs = p.toString();
+    history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
+    $("resetFilters").hidden = !(state.q || state.min || state.max || state.stock || state.cat);
+  }
+
+  // Пошук: назва, короткий і повний опис, а також код лота (точний збіг — першим)
+  function matches(p, q) {
+    const code = q.replace(/\s+/g, "-");
+    return (p.sku || "").toLowerCase().includes(code) || p.name.toLowerCase().includes(q) ||
+      (p.summary || "").toLowerCase().includes(q) || (p.description || "").toLowerCase().includes(q);
+  }
+
+  // Набір лотів з усіма фільтрами, крім категорії (для лічильників у боковій панелі)
+  function filteredExceptCat() {
+    const q = state.q.trim().toLowerCase();
+    const min = state.min === "" ? null : Number(state.min);
+    const max = state.max === "" ? null : Number(state.max);
+    return products.filter(p =>
+      (!q || matches(p, q)) &&
+      (min === null || p.price >= min) &&
+      (max === null || p.price <= max) &&
+      (!state.stock || p.in_stock));
+  }
+
+  const SORTS = {
+    default: (a, b) => b.in_stock - a.in_stock || a.name.localeCompare(b.name, "uk"),
+    cheap: (a, b) => a.price - b.price,
+    expensive: (a, b) => b.price - a.price,
+    rating: (a, b) => (b.rating || 0) - (a.rating || 0) || b.reviews_count - a.reviews_count,
+    new: (a, b) => b.id - a.id,
+  };
+
+  // Дерево категорій: верхній рівень і підкатегорії
+  const tops = () => categories.filter(c => !c.parent_id);
+  const subs = (id) => categories.filter(c => c.parent_id === id);
+  const catIds = (id) => [id, ...subs(id).map(c => c.id)]; // категорія разом з усіма підкатегоріями
+
+  function render() {
+    const base = filteredExceptCat();
+    const count = (id) => { const ids = catIds(id); return base.filter(p => ids.includes(p.category_id)).length; };
+    const cat = categories.find(c => c.id === state.cat);
+    if (state.cat && !cat) state.cat = 0;
+    const parent = cat?.parent_id ? categories.find(c => c.id === cat.parent_id) : null;
+    const openTop = parent ? parent.id : cat?.id; // розгорнута категорія верхнього рівня
+
+    const item = (c, cls = "") => `
+      <li><button type="button" class="side-cat ${cls} ${c.id === state.cat ? "active" : ""}" data-cat="${c.id}">
+        <span>${esc(c.name)}</span><small>${c.id ? count(c.id) : base.length}</small>
+      </button>`;
+    $("cats").innerHTML = item({ id: 0, name: "Усі саджанці" }) + "</li>" + tops().map(t => {
+      const children = subs(t.id);
+      const open = t.id === openTop && children.length;
+      return item(t, children.length ? `has-sub ${open ? "open" : ""}` : "") +
+        (open ? `<ul class="side-sub">${children.map(c => item(c) + "</li>").join("")}</ul>` : "") + "</li>";
+    }).join("");
+
+    // Підкатегорії кнопками над товарами (коли обрано категорію з підкатегоріями)
+    const chipsFor = cat ? subs(openTop) : [];
+    $("subChips").hidden = !chipsFor.length;
+    $("subChips").innerHTML = chipsFor.length ? [categories.find(c => c.id === openTop), ...chipsFor].map((c, i) => `
+      <button type="button" class="sub-chip ${c.id === state.cat ? "active" : ""}" data-cat="${c.id}">
+        ${i === 0 ? "Усі" : esc(c.name)} <small>${count(c.id)}</small></button>`).join("") : "";
+
+    $("catTitle").textContent = cat ? cat.name : "Усі саджанці";
+    $("crumbCat").innerHTML = cat
+      ? `<a href="/catalog">Каталог</a>${parent ? ` › <a href="/catalog?cat=${parent.id}">${esc(parent.name)}</a>` : ""} › ${esc(cat.name)}`
+      : "Каталог";
+    document.title = `${cat ? cat.name : "Каталог саджанців"} — Ягідник`;
+
+    const ids = state.cat ? catIds(state.cat) : null;
+    let list = ids ? base.filter(p => ids.includes(p.category_id)) : base;
+    list = [...list].sort(SORTS[state.sort] || SORTS.default);
+    const q = state.q.trim().toLowerCase().replace(/\s+/g, "-");
+    if (q) list.sort((a, b) => ((b.sku || "").toLowerCase() === q) - ((a.sku || "").toLowerCase() === q));
+
+    $("count").textContent = `${list.length} ${plural(list.length, "товар", "товари", "товарів")}`;
+    $("products").innerHTML = list.length
+      ? list.map(productCardHtml).join("")
+      : `<div class="empty">${state.q ? `За запитом «${esc(state.q)}» нічого не знайдено` : "Немає саджанців за цими умовами"}.
+           <br><button class="btn-sm" type="button" data-reset style="margin-top:10px">Скинути фільтри</button></div>`;
+    syncUrl();
+  }
+
+  // ---------- Події ----------
+  function pickCat(e) {
+    const b = e.target.closest("[data-cat]");
+    if (!b) return;
+    state.cat = Number(b.dataset.cat);
+    render();
+    // на телефоні панель закриваємо, лише коли обрано кінцеву категорію
+    if (!subs(state.cat).length) closeSide();
+    if (window.innerWidth < 860 && !$("side").classList.contains("open")) $("catTitle").scrollIntoView({ behavior: "smooth" });
+  }
+  $("cats").addEventListener("click", pickCat);
+  $("subChips").addEventListener("click", pickCat);
+  let t;
+  const later = (fn) => { clearTimeout(t); t = setTimeout(fn, 200); };
+  $("q").addEventListener("input", (e) => later(() => { state.q = e.target.value; render(); }));
+  $("priceMin").addEventListener("input", (e) => later(() => { state.min = e.target.value; render(); }));
+  $("priceMax").addEventListener("input", (e) => later(() => { state.max = e.target.value; render(); }));
+  $("onlyStock").addEventListener("change", (e) => { state.stock = e.target.checked; render(); });
+  $("sort").addEventListener("change", (e) => { state.sort = e.target.value; render(); });
+
+  function reset() {
+    Object.assign(state, { cat: 0, q: "", min: "", max: "", stock: false });
+    fillControls();
+    render();
+  }
+  $("resetFilters").onclick = reset;
+  $("products").addEventListener("click", (e) => { if (e.target.closest("[data-reset]")) reset(); });
+
+  // Бокова панель на телефоні розгортається кнопкою «Фільтри»
+  function closeSide() { $("side").classList.remove("open"); $("sideToggle").setAttribute("aria-expanded", "false"); }
+  $("sideToggle").onclick = () => {
+    const open = $("side").classList.toggle("open");
+    $("sideToggle").setAttribute("aria-expanded", String(open));
+  };
+
+  bindProductCards($("products"), (id) => products.find(p => p.id === id));
+
+  function fillControls() {
+    $("q").value = state.q;
+    $("priceMin").value = state.min;
+    $("priceMax").value = state.max;
+    $("onlyStock").checked = state.stock;
+    $("sort").value = SORTS[state.sort] ? state.sort : "default";
+  }
+
+  (async () => {
+    fillControls();
+    try {
+      ({ products, categories } = await api("/api/catalog"));
+      render();
+    } catch (err) {
+      $("products").innerHTML = `<div class="empty">Не вдалося завантажити каталог: ${esc(err.message)}</div>`;
+    }
+  })();
+</script>
+</body>
+</html>

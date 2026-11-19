@@ -85,7 +85,9 @@ db.exec(`
 // Міграції: додаємо нові колонки до вже існуючої бази
 function addColumn(table, column, definition) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
-  if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  if (cols.includes(column)) return false;
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  return true;
 }
 addColumn("order_items", "image", "TEXT NOT NULL DEFAULT ''");           // знімок фото на момент покупки
 addColumn("order_items", "status", "TEXT NOT NULL DEFAULT 'pending'");   // стан обробки лота
@@ -98,6 +100,14 @@ addColumn("orders", "ttn", "TEXT NOT NULL DEFAULT ''");                  // но
 addColumn("orders", "updated_at", "TEXT");
 addColumn("products", "sku", "TEXT");                                    // унікальний код лота
 addColumn("order_items", "sku", "TEXT NOT NULL DEFAULT ''");             // знімок коду на момент покупки
+// Вкладені категорії: «Фруктові» → «Яблука», «Груші»… (два рівні)
+addColumn("categories", "parent_id", "INTEGER REFERENCES categories(id) ON DELETE CASCADE");
+// Короткий опис (прев'ю) для списку лотів; повний опис — лише на сторінці лота.
+// Для наявних лотів один раз заповнюємо його початком повного опису.
+if (addColumn("products", "summary", "TEXT NOT NULL DEFAULT ''")) {
+  db.exec(`UPDATE products SET summary = CASE WHEN length(description) <= 160 THEN description
+                                          ELSE rtrim(substr(description, 1, 157)) || '…' END`);
+}
 // Оплата
 addColumn("orders", "payment_method", "TEXT NOT NULL DEFAULT 'cod'");    // cod (післяплата) | online
 addColumn("orders", "payment_status", "TEXT NOT NULL DEFAULT 'unpaid'"); // unpaid | awaiting | processing | paid | failed | refunded
@@ -180,12 +190,12 @@ if (db.prepare("SELECT COUNT(*) AS n FROM categories").get().n === 0) {
   };
   const addCat = db.prepare("INSERT INTO categories (name, sort_order) VALUES (?, ?)");
   const addProd = db.prepare(
-    "INSERT INTO products (category_id, name, emoji, price, description) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO products (category_id, name, emoji, price, description, summary) VALUES (?, ?, ?, ?, ?, ?)"
   );
   db.exec("BEGIN");
   Object.entries(seed).forEach(([cat, items], i) => {
     const catId = addCat.run(cat, i).lastInsertRowid;
-    for (const [name, emoji, price, desc] of items) addProd.run(catId, name, emoji, price, desc);
+    for (const [name, emoji, price, desc] of items) addProd.run(catId, name, emoji, price, desc, desc);
   });
   db.exec("COMMIT");
   backfillSku();

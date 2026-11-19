@@ -1,0 +1,97 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 640">
+  <!-- Прозоре тло: колір дає сам банер. Ліва частина (під текстом) порожня,
+       зона x 994–1411 / y 157–483 залишена спокійною — там лежать картки переваг. -->
+  <defs>
+    <radialGradient id="glow" cx="1150" cy="330" r="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5a9a55" stop-opacity=".55"/>
+      <stop offset=".55" stop-color="#3f7d45" stop-opacity=".25"/>
+      <stop offset="1" stop-color="#3f7d45" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="apple" cx="35%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#f06a4f"/><stop offset=".6" stop-color="#cf2f2a"/><stop offset="1" stop-color="#8f1d1d"/>
+    </radialGradient>
+    <radialGradient id="pear" cx="35%" cy="35%" r="75%">
+      <stop offset="0" stop-color="#e4ec7a"/><stop offset=".65" stop-color="#b8c845"/><stop offset="1" stop-color="#7f9330"/>
+    </radialGradient>
+    <radialGradient id="cherry" cx="35%" cy="30%" r="70%">
+      <stop offset="0" stop-color="#e2474f"/><stop offset="1" stop-color="#8a1020"/>
+    </radialGradient>
+    <radialGradient id="berry" cx="35%" cy="30%" r="70%">
+      <stop offset="0" stop-color="#7f8fd6"/><stop offset="1" stop-color="#2f3a78"/>
+    </radialGradient>
+    <radialGradient id="straw" cx="40%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#ff6b5a"/><stop offset="1" stop-color="#c3201f"/>
+    </radialGradient>
+    <path id="leaf" d="M0 0C24-26 70-26 96 0 70 26 24 26 0 0Z"/>
+    <path id="strawberry" d="M0 62C-42 44-54-6-42-28-26-50 26-50 42-28 54-6 42 44 0 62Z"/>
+    <g id="seeds" fill="#ffe08a" opacity=".85">
+      <ellipse cx="-18" cy="-10" rx="3" ry="5"/><ellipse cx="10" cy="-14" rx="3" ry="5"/>
+      <ellipse cx="-4" cy="10" rx="3" ry="5"/><ellipse cx="22" cy="8" rx="3" ry="5"/>
+      <ellipse cx="-22" cy="16" rx="3" ry="5"/><ellipse cx="6" cy="32" rx="3" ry="5"/>
+    </g>
+    <path id="calyx" d="M0-40-30-52-12-38-40-30-8-32 0-50 8-32 40-30 12-38 30-52Z" fill="#4c9a43"/>
+  </defs>
+
+  <rect width="1600" height="640" fill="url(#glow)"/>
+  <circle cx="1150" cy="330" r="300" fill="#fff" opacity=".035"/>
+  <circle cx="1150" cy="330" r="200" fill="#fff" opacity=".03"/>
+
+  <!-- Гілка з листям угорі -->
+  <path d="M1640 6C1460 34 1270 66 1110 104 990 132 890 146 780 140" stroke="#5b3b22" stroke-width="11" fill="none" stroke-linecap="round"/>
+  <use href="#leaf" transform="translate(1530 22) rotate(-160) scale(1.05)" fill="#4f9a4f"/>
+  <use href="#leaf" transform="translate(1440 40) rotate(-20) scale(.95)" fill="#5fae58"/>
+  <use href="#leaf" transform="translate(1300 70) rotate(-170) scale(.9)" fill="#3f8a43"/>
+  <use href="#leaf" transform="translate(1200 92) rotate(-15) scale(.85)" fill="#5fae58"/>
+  <use href="#leaf" transform="translate(1050 120) rotate(195) scale(.85)" fill="#4f9a4f"/>
+  <use href="#leaf" transform="translate(800 140) rotate(165) scale(.8)" fill="#5fae58"/>
+
+  <!-- Вишні між текстом і картками -->
+  <g stroke="#6b4a2b" stroke-width="4" fill="none" stroke-linecap="round">
+    <path d="M905 145C890 190 875 240 864 286"/>
+    <path d="M905 145C918 195 928 250 936 300"/>
+  </g>
+  <use href="#leaf" transform="translate(905 146) rotate(70) scale(.5)" fill="#5fae58"/>
+  <circle cx="862" cy="312" r="31" fill="url(#cherry)"/>
+  <circle cx="938" cy="326" r="31" fill="url(#cherry)"/>
+  <ellipse cx="851" cy="300" rx="7" ry="10" fill="#fff" opacity=".35"/>
+  <ellipse cx="927" cy="314" rx="7" ry="10" fill="#fff" opacity=".35"/>
+
+  <!-- Яблуко внизу ліворуч від карток -->
+  <g transform="translate(850 500)">
+    <path d="M0-60C35-85 90-60 85 0 82 55 45 90 0 75-45 90-82 55-85 0-90-60-35-85 0-60Z" fill="url(#apple)"/>
+    <path d="M0-58C0-78 6-92 14-100" stroke="#6b4a2b" stroke-width="7" stroke-linecap="round" fill="none"/>
+    <use href="#leaf" transform="translate(10 -92) rotate(-20) scale(.6)" fill="#4f9a4f"/>
+    <ellipse cx="-42" cy="-18" rx="12" ry="22" fill="#fff" opacity=".25" transform="rotate(20 -42 -18)"/>
+  </g>
+
+  <!-- Груша праворуч від карток -->
+  <g transform="translate(1508 330)">
+    <path d="M0-90C25-90 30-50 35-25 70 0 75 60 40 85 15 100-15 100-40 85-75 60-70 0-35-25-30-50-25-90 0-90Z" fill="url(#pear)"/>
+    <path d="M0-88C2-104 8-114 16-120" stroke="#6b4a2b" stroke-width="6" stroke-linecap="round" fill="none"/>
+    <use href="#leaf" transform="translate(12 -112) rotate(-25) scale(.55)" fill="#5fae58"/>
+  </g>
+
+  <!-- Полуниці під картками -->
+  <g transform="translate(1065 580) rotate(-12) scale(.9)"><use href="#strawberry" fill="url(#straw)"/><use href="#seeds"/><use href="#calyx"/></g>
+  <g transform="translate(1150 605) rotate(14) scale(.72)"><use href="#strawberry" fill="url(#straw)"/><use href="#seeds"/><use href="#calyx"/></g>
+
+  <!-- Саджанець -->
+  <ellipse cx="1290" cy="640" rx="110" ry="22" fill="#000" opacity=".18"/>
+  <g transform="translate(1290 632)">
+    <path d="M0 0C-3-40 3-80 0-112" stroke="#6b8f3a" stroke-width="7" fill="none" stroke-linecap="round"/>
+    <use href="#leaf" transform="translate(0 -45) rotate(-150) scale(.55)" fill="#5fae58"/>
+    <use href="#leaf" transform="translate(0 -72) rotate(-30) scale(.6)" fill="#4f9a4f"/>
+    <use href="#leaf" transform="translate(0 -108) rotate(-115) scale(.45)" fill="#6fbf63"/>
+    <use href="#leaf" transform="translate(0 -110) rotate(-65) scale(.42)" fill="#5fae58"/>
+  </g>
+
+  <!-- Лохина -->
+  <circle cx="1470" cy="565" r="26" fill="url(#berry)"/>
+  <circle cx="1522" cy="552" r="24" fill="url(#berry)"/>
+  <circle cx="1500" cy="603" r="25" fill="url(#berry)"/>
+  <circle cx="1558" cy="596" r="22" fill="url(#berry)"/>
+  <g stroke="#1e2650" stroke-width="3" stroke-linecap="round" opacity=".7">
+    <path d="M1464 553h12M1470 547v12"/><path d="M1516 541h12M1522 535v12"/>
+    <path d="M1494 591h12M1500 585v12"/><path d="M1553 585h10M1558 580v10"/>
+  </g>
+</svg>

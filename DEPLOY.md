@@ -125,7 +125,7 @@ SMTP_HOST=smtp.gmail.com
 SMTP_PORT=465
 SMTP_USER=ваша@gmail.com
 SMTP_PASS=xxxxxxxxxxxxxxxx
-SMTP_FROM="Зелений Сад <ваша@gmail.com>"
+SMTP_FROM="Ягідник <ваша@gmail.com>"
 
 # LiqPay (коли будуть ключі). Спершу тестові ключі й LIQPAY_SANDBOX=1, потім бойові й 0
 LIQPAY_PUBLIC_KEY=

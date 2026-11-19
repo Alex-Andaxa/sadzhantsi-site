@@ -4,18 +4,23 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Замовлення — Зелений Сад</title>
+<title>Замовлення — Ягідник</title>
 <script src="/theme.js"></script>
 <link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="/img/logo.svg" type="image/svg+xml">
 </head>
 <body>
 
 <header>
   <div class="container nav">
-    <a href="/" class="logo">🌱 Зелений Сад</a>
+    <a href="/" class="logo"><img src="/img/logo.svg" alt="" class="logo-icon">Ягідник</a>
+    <nav class="nav-links">
+      <a href="/catalog">Каталог</a>
+      <a href="/about">Про нас</a>
+    </nav>
     <div class="nav-actions">
       <a href="/" class="account-link">До магазину</a>
-      <button class="cart-btn" type="button" data-open-cart>🛒 Кошик<span class="badge cart-count">0</span></button>
+      <button class="cart-btn" type="button" data-open-cart aria-label="Кошик"><i data-ic="cart"></i><span class="cart-label">Кошик</span><span class="badge cart-count">0</span></button>
     </div>
   </div>
 </header>
@@ -23,6 +28,8 @@
 <main class="container page">
   <div class="panel result-box" id="view"><p class="hint">Завантаження…</p></div>
 </main>
+
+<footer id="siteFooter" class="site-footer"></footer>
 
 <script src="/common.js"></script>
 <script>
@@ -61,7 +68,7 @@
     try {
       data = await api(`/api/orders/${encodeURIComponent(orderId)}/status?token=${encodeURIComponent(token)}`);
     } catch (err) {
-      $("view").innerHTML = `<div class="big">⚠️</div><h2>Не вдалося показати замовлення</h2><p>${esc(err.message)}</p>`;
+      $("view").innerHTML = `<div class="status-ic warn">${icon("alert")}</div><h2>Не вдалося показати замовлення</h2><p>${esc(err.message)}</p>`;
       return;
     }
     const o = data.order;
@@ -70,20 +77,20 @@
     const iban = o.payment_method === "iban";
     const head = iban
       ? (st === "paid"
-          ? ["✅", "Оплату отримано — дякуємо!", "Ми зателефонуємо для підтвердження відправки."]
-          : ["🏦", "Замовлення прийнято — залишилось оплатити", "Перекажіть суму за реквізитами нижче з застосунку будь-якого банку. Відправимо після надходження коштів."])
+          ? ["ok:checkCircle", "Оплату отримано — дякуємо!", "Ми зателефонуємо для підтвердження відправки."]
+          : ["wait:bank", "Замовлення прийнято — залишилось оплатити", "Перекажіть суму за реквізитами нижче з застосунку будь-якого банку. Відправимо після надходження коштів."])
       : !online
-      ? ["✅", "Дякуємо! Замовлення прийнято", "Оплата — при отриманні у відділенні. Ми зателефонуємо для підтвердження."]
+      ? ["ok:checkCircle", "Дякуємо! Замовлення прийнято", "Оплата — при отриманні у відділенні. Ми зателефонуємо для підтвердження."]
       : st === "paid"
-        ? ["✅", "Оплату отримано — дякуємо!", "Замовлення оплачено. Ми зателефонуємо для підтвердження відправки."]
+        ? ["ok:checkCircle", "Оплату отримано — дякуємо!", "Замовлення оплачено. Ми зателефонуємо для підтвердження відправки."]
         : st === "failed"
-          ? ["❌", "Оплата не пройшла", "Кошти не списано. Спробуйте ще раз або оберіть іншу картку."]
+          ? ["bad:xCircle", "Оплата не пройшла", "Кошти не списано. Спробуйте ще раз або оберіть іншу картку."]
           : st === "refunded"
-            ? ["↩️", "Кошти повернено", ""]
-            : ["⏳", "Очікуємо підтвердження оплати", "Це може зайняти до хвилини. Сторінка оновиться сама."];
+            ? ["wait:undo", "Кошти повернено", ""]
+            : ["wait:clock", "Очікуємо підтвердження оплати", "Це може зайняти до хвилини. Сторінка оновиться сама."];
 
     $("view").innerHTML = `
-      <div class="big">${head[0]}</div>
+      <div class="status-ic ${head[0].split(":")[0]}">${icon(head[0].split(":")[1])}</div>
       <h2>${head[1]}</h2>
       <p>${head[2]}</p>
       <div style="text-align:left;margin:18px 0" class="panel">
@@ -95,9 +102,9 @@
         <div class="summary-row"><span>Доставка</span><span style="text-align:right">${esc(DELIVERY[o.delivery] || "")}<br><small class="hint">${esc(o.city)}<br>${esc(o.branch)}</small></span></div>
       </div>
       ${data.requisites && st !== "paid" && st !== "refunded" ? requisitesHtml(data.requisites) : ""}
-      ${data.can_pay && st !== "processing" && st !== "awaiting" ? `<p><button class="btn" id="payBtn">💳 Оплатити ${fmt(o.total)}</button></p>` : ""}
+      ${data.can_pay && st !== "processing" && st !== "awaiting" ? `<p><button class="btn" id="payBtn">${icon("card")} Оплатити ${fmt(o.total)}</button></p>` : ""}
       ${data.can_pay && st === "awaiting" && polls >= 8 ? `<p class="hint">Не завершили оплату? <button class="link-btn" id="payBtn">Перейти до оплати ще раз</button></p>` : ""}
-      <p><a href="/account">Мої замовлення</a> · <a href="/#catalog">Продовжити покупки</a></p>`;
+      <p><a href="/account">Мої замовлення</a> · <a href="/catalog">Продовжити покупки</a></p>`;
 
     const pb = $("payBtn");
     if (pb) pb.onclick = async () => {

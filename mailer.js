@@ -28,11 +28,11 @@ const escHtml = (s) => String(s).replace(/[&<>"']/g, (c) =>
 
 async function sendCode(to, code, purpose) {
   const what = purpose === "register" ? "підтвердження реєстрації" : "підтвердження зміни пароля";
-  const subject = `${code} — код ${what} | Зелений Сад`;
+  const subject = `${code} — код ${what} | Ягідник`;
   const text = `Ваш код ${what}: ${code}\n\nКод дійсний 10 хвилин. Якщо ви не робили цей запит — просто проігноруйте лист.`;
   const html = `
     <div style="font-family:system-ui,sans-serif;max-width:420px;margin:auto;padding:24px;color:#1f2a1f">
-      <h2 style="color:#2f6b3a;margin:0 0 12px">🌱 Зелений Сад</h2>
+      <h2 style="color:#2f6b3a;margin:0 0 12px">🧺 Ягідник</h2>
       <p>Ваш код ${escHtml(what)}:</p>
       <p style="font-size:32px;font-weight:700;letter-spacing:8px;background:#e8f2e6;padding:12px;text-align:center;border-radius:8px">${escHtml(code)}</p>
       <p style="color:#5d6b5d;font-size:14px">Код дійсний 10 хвилин. Якщо ви не робили цей запит — просто проігноруйте лист.</p>

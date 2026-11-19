@@ -3,37 +3,38 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Саджанець — Зелений Сад</title>
+<title>Саджанець — Ягідник</title>
 <script src="/theme.js"></script>
 <link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="/img/logo.svg" type="image/svg+xml">
 </head>
 <body>
 
 <header>
   <div class="container nav">
-    <a href="/" class="logo">🌱 Зелений Сад</a>
+    <a href="/" class="logo"><img src="/img/logo.svg" alt="" class="logo-icon">Ягідник</a>
     <nav class="nav-links">
-      <a href="/#catalog">Каталог</a>
+      <a href="/catalog">Каталог</a>
+      <a href="/about">Про нас</a>
     </nav>
     <div class="nav-actions">
       <span class="nav-actions" id="authLinks">
-        <a href="/login" class="account-link">Увійти</a>
+        <a href="/login" class="account-link" aria-label="Увійти"><i data-ic="user"></i><span class="auth-label">Увійти</span></a>
         <a href="/register" class="account-link hide-sm">Реєстрація</a>
       </span>
-      <button class="cart-btn" type="button" data-open-cart>🛒 Кошик<span class="badge cart-count">0</span></button>
+      <button class="cart-btn" type="button" data-open-cart aria-label="Кошик"><i data-ic="cart"></i><span class="cart-label">Кошик</span><span class="badge cart-count">0</span></button>
     </div>
   </div>
 </header>
 
-<main class="container page">
+<main class="container page product-page">
   <div id="view"><p class="hint">Завантаження…</p></div>
 </main>
 
-<footer>© <span id="year"></span> Зелений Сад. Усі права захищено.</footer>
+<footer id="siteFooter" class="site-footer"></footer>
 
 <script src="/common.js"></script>
 <script>
-  $("year").textContent = new Date().getFullYear();
 
   let p = null;
   let idx = 0;
@@ -109,11 +110,11 @@
   function renderGallery() {
     const imgs = p.images;
     const main = imgs.length
-      ? `<img src="${esc(imgs[idx].url)}" alt="${esc(p.name)} — фото ${idx + 1}">`
+      ? photoHtml(imgs[idx].url, `${p.name} — фото ${idx + 1}`, { lazy: false })
       : imgTag(null);
     const arrows = imgs.length > 1 ? `
-      <button class="gal-btn prev" data-step="-1" aria-label="Попереднє фото">‹</button>
-      <button class="gal-btn next" data-step="1" aria-label="Наступне фото">›</button>` : "";
+      <button class="gal-btn prev" data-step="-1" aria-label="Попереднє фото">${ICON_PREV}</button>
+      <button class="gal-btn next" data-step="1" aria-label="Наступне фото">${ICON_NEXT}</button>` : "";
     $("pgMain").innerHTML = main + arrows;
     $("pgThumbs").innerHTML = imgs.length > 1 ? imgs.map((im, i) => `
       <button class="${i === idx ? "on" : ""}" data-i="${i}" aria-label="Фото ${i + 1}">
@@ -122,9 +123,9 @@
   }
 
   function render() {
-    document.title = `${p.name} — Зелений Сад`;
+    document.title = `${p.name} — Ягідник`;
     $("view").innerHTML = `
-      <div class="crumbs"><a href="/#catalog">Каталог</a> › ${esc(p.category_name)} › ${esc(p.name)}</div>
+      <div class="crumbs"><a href="/catalog">Каталог</a> ›${p.category_parent_id ? ` <a href="/catalog?cat=${p.category_parent_id}">${esc(p.category_parent_name)}</a> ›` : ""} <a href="/catalog?cat=${p.category_id}">${esc(p.category_name)}</a> › ${esc(p.name)}</div>
       <div class="product">
         <div>
           <div class="pg-main" id="pgMain"></div>
@@ -140,11 +141,11 @@
           ${p.in_stock ? `
             <div class="buy-row">
               <input type="number" id="qty" class="qty-input" value="1" min="1" max="999" aria-label="Кількість">
-              <button class="btn" id="addBtn">🛒 Купити</button>
+              <button class="btn" id="addBtn">${icon("cart")} Купити</button>
             </div>`
           : `<p class="hint">Цього саджанця зараз немає в наявності. Зателефонуйте нам — підкажемо, коли з'явиться.</p>`}
           <div class="panel" style="margin-top:20px">
-            <b>🚚 Доставка</b>
+            <b class="with-ic">${icon("truck")} Доставка</b>
             <p class="hint" style="margin:6px 0 0">Нова Пошта або Укрпошта, 1–3 дні. Відділення обираєте під час оформлення замовлення.</p>
           </div>
         </div>
@@ -214,13 +215,13 @@
 
   (async () => {
     try { me = (await api("/api/me")).user; } catch (e) {}
-    if (me) $("authLinks").innerHTML = `<a href="/account" class="account-link">👤 ${esc(me.name.split(" ")[0])}</a>`;
+    
     try {
       await load();
       if (location.hash === "#reviews") $("reviews").scrollIntoView();
     } catch (err) {
       $("view").innerHTML = `<div class="panel"><h2>Лот не знайдено</h2>
-        <p>${esc(err.message)}</p><p><a href="/#catalog">← Повернутися до каталогу</a></p></div>`;
+        <p>${esc(err.message)}</p><p><a href="/catalog">← Повернутися до каталогу</a></p></div>`;
     }
   })();
 </script>

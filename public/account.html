@@ -3,17 +3,19 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Особистий кабінет — Зелений Сад</title>
+<title>Особистий кабінет — Ягідник</title>
 <script src="/theme.js"></script>
 <link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="/img/logo.svg" type="image/svg+xml">
 </head>
 <body>
 
 <header>
   <div class="container nav">
-    <a href="/" class="logo">🌱 Зелений Сад</a>
+    <a href="/" class="logo"><img src="/img/logo.svg" alt="" class="logo-icon">Ягідник</a>
     <nav class="nav-links">
-      <a href="/#catalog">Каталог</a>
+      <a href="/catalog">Каталог</a>
+      <a href="/about">Про нас</a>
     </nav>
     <div class="nav-actions">
       <a href="/" class="account-link">← До магазину</a>
@@ -28,7 +30,7 @@
     <div class="profile-head">
       <h2 id="hello" style="margin:0"></h2>
       <div class="row" style="flex:0 0 auto">
-        <a href="/admin" class="btn-sm" id="toAdmin" hidden>⚙️ Адмін-панель</a>
+        <a href="/admin" class="btn-sm" id="toAdmin" hidden><i data-ic="settings"></i> Адмін-панель</a>
         <button class="btn-sm" id="logoutBtn">Вийти</button>
       </div>
     </div>
@@ -76,6 +78,8 @@
     </div>
   </div>
 </main>
+
+<footer id="siteFooter" class="site-footer"></footer>
 
 <script src="/common.js"></script>
 <script>
@@ -197,7 +201,7 @@
     try {
       const { orders } = await api("/api/me/orders");
       if (!orders.length) {
-        $("orders").innerHTML = `<div class="empty">Ви ще нічого не купували. <a href="/#catalog">Перейти до каталогу →</a></div>`;
+        $("orders").innerHTML = `<div class="empty">Ви ще нічого не купували. <a href="/catalog">Перейти до каталогу →</a></div>`;
         return;
       }
       const spent = orders.filter(o => o.status !== "cancelled").reduce((s, o) => s + o.total, 0);
@@ -211,14 +215,14 @@
             </div>
             <p class="hint" style="margin:0 0 8px">
               ${esc(DELIVERY[o.delivery] || "")}: ${esc(o.city)}${o.branch ? ` — ${esc(o.branch)}` : ""}
-              ${o.ttn ? `<br>📦 ТТН: <b>${esc(o.ttn)}</b>` : ""}
+              ${o.ttn ? `<br><span class="with-ic">${icon("package")} ТТН: <b>${esc(o.ttn)}</b></span>` : ""}
               <br>${esc(PAY_METHOD[o.payment_method] || "")}:
               <span class="pay-badge" data-s="${esc(o.payment_status)}">${esc(PAY_STATUS[o.payment_status] || o.payment_status)}</span>
             </p>
             ${o.items.map(i => `
               <div class="order-line" style="align-items:center">
                 <span class="row" style="flex-wrap:nowrap;gap:10px">
-                  ${i.image_url ? imgTag(i.image_url, i.product_name, "thumb") : `<span class="no-photo thumb">${esc(i.emoji || "🌱")}</span>`}
+                  ${i.image_url ? imgTag(i.image_url, i.product_name, "thumb") : imgTag(null, "", "thumb")}
                   <span>
                     ${i.product_id ? `<a href="/product?id=${i.product_id}" class="card-link">${esc(i.product_name)}</a>` : esc(i.product_name)} × ${i.qty}
                     ${i.sku ? `<span class="sku">${esc(i.sku)}</span>` : ""}
@@ -227,12 +231,12 @@
                 </span>
                 <span>${fmt(i.price * i.qty)}</span>
               </div>`).join("")}
-            ${o.comment ? `<p class="hint" style="margin:6px 0 0">💬 ${esc(o.comment)}</p>` : ""}
+            ${o.comment ? `<p class="hint with-ic" style="margin:6px 0 0">${icon("chat")} ${esc(o.comment)}</p>` : ""}
             <div class="order-foot"><span>Разом</span><span>${fmt(o.total)}</span></div>
             ${o.payment_method === "online" && !["paid", "refunded"].includes(o.payment_status) && o.status !== "cancelled"
-              ? `<p style="margin:10px 0 0"><button class="btn-green" data-pay="${o.id}">💳 Оплатити ${fmt(o.total)}</button></p>` : ""}
+              ? `<p style="margin:10px 0 0"><button class="btn-green" data-pay="${o.id}">${icon("card")} Оплатити ${fmt(o.total)}</button></p>` : ""}
             ${o.payment_method === "iban" && !["paid", "refunded"].includes(o.payment_status) && o.status !== "cancelled"
-              ? `<p style="margin:10px 0 0"><a class="btn-green" style="text-decoration:none;display:inline-block" href="/payment?order=${o.id}">🏦 Реквізити для оплати</a></p>` : ""}
+              ? `<p style="margin:10px 0 0"><a class="btn-green" style="text-decoration:none;display:inline-block" href="/payment?order=${o.id}">${icon("bank")} Реквізити для оплати</a></p>` : ""}
           </div>`).join("");
     } catch (err) {
       $("orders").innerHTML = `<p class="error">${esc(err.message)}</p>`;

@@ -4,20 +4,21 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>Оформлення замовлення — Зелений Сад</title>
+<title>Оформлення замовлення — Ягідник</title>
 <script src="/theme.js"></script>
 <link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="/img/logo.svg" type="image/svg+xml">
 </head>
 <body>
 
 <header>
   <div class="container nav">
-    <a href="/" class="logo">🌱 Зелений Сад</a>
+    <a href="/" class="logo"><img src="/img/logo.svg" alt="" class="logo-icon">Ягідник</a>
     <div class="nav-actions">
       <span class="nav-actions" id="authLinks">
-        <a href="/login?next=/checkout" class="account-link">Увійти</a>
+        <a href="/login?next=/checkout" class="account-link" aria-label="Увійти"><i data-ic="user"></i><span class="auth-label">Увійти</span></a>
       </span>
-      <button class="cart-btn" type="button" data-open-cart>🛒 Кошик<span class="badge cart-count">0</span></button>
+      <button class="cart-btn" type="button" data-open-cart aria-label="Кошик"><i data-ic="cart"></i><span class="cart-label">Кошик</span><span class="badge cart-count">0</span></button>
     </div>
   </div>
 </header>
@@ -34,8 +35,8 @@
 
   function renderEmpty(msg) {
     $("view").innerHTML = `<div class="panel result-box">
-      <div class="big">🛒</div><h2>${esc(msg)}</h2>
-      <p><a href="/#catalog" class="btn">До каталогу</a></p></div>`;
+      <div class="empty-ic">${icon("cart")}</div><h2>${esc(msg)}</h2>
+      <p><a href="/catalog" class="btn">До каталогу</a></p></div>`;
   }
 
   // Підсумок праворуч (оновлюється при зміні кошика)
@@ -62,18 +63,18 @@
     const opts = [];
     if (cfg.payment.online) opts.push(`
       <label class="pay-opt"><input type="radio" name="payment_method" value="online">
-        <span><b>💳 Онлайн-оплата карткою будь-якого банку</b>
+        <span><b class="with-ic">${icon("card")} Онлайн-оплата карткою будь-якого банку</b>
         <small>Visa або Mastercard від будь-якого українського банку (monobank, ПриватБанк, Ощадбанк, ПУМБ, А-Банк, Райффайзен…),
         а також Apple Pay, Google Pay і Приват24. Через захищену сторінку LiqPay.
         ${cfg.sandbox ? "<br><b>Тестовий режим:</b> гроші не списуються." : ""}</small></span></label>`);
     if (cfg.payment.iban) opts.push(`
       <label class="pay-opt"><input type="radio" name="payment_method" value="iban">
-        <span><b>🏦 Оплата за реквізитами (IBAN)</b>
+        <span><b class="with-ic">${icon("bank")} Оплата за реквізитами (IBAN)</b>
         <small>Переказ із застосунку будь-якого банку або в касі. Реквізити та призначення платежу покажемо одразу після оформлення.
         Відправимо після надходження коштів.</small></span></label>`);
     if (cfg.payment.cod) opts.push(`
       <label class="pay-opt"><input type="radio" name="payment_method" value="cod">
-        <span><b>📦 Накладений платіж</b>
+        <span><b class="with-ic">${icon("cash")} Накладений платіж</b>
         <small>Оплата при отриманні у відділенні. Перевізник бере комісію за переказ коштів за своїми тарифами.</small></span></label>`);
     return opts.join("") || `<p class="error">Немає доступних способів оплати. Зв'яжіться з нами.</p>`;
   }
@@ -85,7 +86,7 @@
         <form id="coForm" novalidate>
           <section class="panel step">
             <h2><span class="num">1</span> Контактні дані</h2>
-            ${me ? "" : `<p class="hint" style="margin-top:0">Вже купували в нас? <a href="/login?next=/checkout">Увійдіть</a> — замовлення збережеться в історії покупок.</p>`}
+            ${me ? "" : `<div class="guest-note"><b>Реєстрація не обов’язкова</b> — оформіть замовлення як гість, ми зателефонуємо для підтвердження.<br><small>Маєте акаунт? <a href="/login?next=/checkout">Увійдіть</a>, щоб замовлення збереглось в історії покупок.</small></div>`}
             <div class="row">
               <label>Ім'я та прізвище <input name="name" required autocomplete="name" value="${esc(me?.name || "")}"></label>
               <label>Телефон <input name="phone" id="coPhone" required autocomplete="tel" value="${esc(me?.phone || "")}"></label>
@@ -173,7 +174,7 @@
     try {
       [{ user: me }, cfg] = await Promise.all([api("/api/me"), api("/api/checkout/config"), CartUI.load()]);
     } catch (e) { return renderEmpty("Не вдалося завантажити дані: " + e.message); }
-    if (me) $("authLinks").innerHTML = `<a href="/account" class="account-link">👤 ${esc(me.name.split(" ")[0])}</a>`;
+    
     if (!CartUI.summary().lines.length) return renderEmpty("Кошик порожній");
     render();
   })();

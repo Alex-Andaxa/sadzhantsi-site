@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Про нас — Ягідник</title>
+<meta name="description" content="Ягідник — сімейний розсадник саджанців. Контакти, доставка, гарантія приживлення.">
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="/img/logo.svg" type="image/svg+xml">
+</head>
+<body>
+
+<header>
+  <div class="container nav">
+    <a href="/" class="logo"><img src="/img/logo.svg" alt="" class="logo-icon">Ягідник</a>
+    <nav class="nav-links">
+      <a href="/catalog">Каталог</a>
+      <a href="/about">Про нас</a>
+    </nav>
+    <div class="nav-actions">
+      <span class="nav-actions" id="authLinks">
+        <a href="/login" class="account-link" aria-label="Увійти"><i data-ic="user"></i><span class="auth-label">Увійти</span></a>
+        <a href="/register" class="account-link hide-sm">Реєстрація</a>
+      </span>
+      <button class="cart-btn" type="button" data-open-cart aria-label="Кошик"><i data-ic="cart"></i><span class="cart-label">Кошик</span><span class="badge cart-count">0</span></button>
+    </div>
+  </div>
+</header>
+
+<div class="page-hero">
+  <div class="hero-art" aria-hidden="true"></div>
+  <div class="container">
+    <div class="crumbs"><a href="/">Головна</a> › Про нас</div>
+    <h1>Про нас</h1>
+    <p>Сімейний розсадник, який вирощує саджанці для українських садів.</p>
+  </div>
+</div>
+
+<main class="container page">
+  <div class="about-grid">
+    <div class="panel about-text">
+      <h2>Ягідник — сімейний розсадник</h2>
+      <p>Ми вирощуємо саджанці у відкритому ґрунті та контейнерах, ретельно відбираємо сорти й пакуємо кожну рослину так, щоб вона доїхала до вас свіжою.</p>
+      <p>Найкращий час для посадки — весна (березень–квітень) та осінь (жовтень–листопад).</p>
+
+      <ul class="about-points">
+        <li><span class="pt-ic"><i data-ic="truck"></i></span><div><b>Доставка по Україні</b><small>Нова Пошта та Укрпошта, 1–3 дні</small></div></li>
+        <li><span class="pt-ic"><i data-ic="leaf"></i></span><div><b>Власний розсадник</b><small>Вирощуємо самі понад 10 років</small></div></li>
+        <li><span class="pt-ic"><i data-ic="shield"></i></span><div><b>Гарантія приживлення</b><small>Замінимо, якщо саджанець не прийметься</small></div></li>
+        <li><span class="pt-ic"><i data-ic="package"></i></span><div><b>Надійне пакування</b><small>Коріння в зволоженому субстраті, гілки зафіксовані</small></div></li>
+      </ul>
+      <p><a href="/catalog" class="btn">Перейти до каталогу</a></p>
+    </div>
+
+    <aside class="panel" id="contacts">
+      <h2>Контакти</h2>
+      <ul class="contacts contacts-lg" id="contactList"><li class="hint">Завантаження…</li></ul>
+      <p class="hint" style="margin-top:14px">Питання щодо замовлення? Вкажіть його номер — так ми відповімо швидше.</p>
+    </aside>
+  </div>
+</main>
+
+<footer id="siteFooter" class="site-footer"></footer>
+
+<script src="/common.js"></script>
+<script>
+  siteInfo().then(({ contacts }) => {
+    const items = contactItems(contacts);
+    $("contactList").innerHTML = items.length
+      ? items.join("")
+      : `<li class="hint">Контакти незабаром з'являться. Поки що ви можете оформити замовлення на сайті — ми зателефонуємо для підтвердження.</li>`;
+  });
+</script>
+</body>
+</html>

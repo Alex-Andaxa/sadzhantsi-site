@@ -393,16 +393,50 @@ function saveWithImages(fn) {
 // ---------- Каталог (публічний) ----------
 // Поля лота для вітрини + середня оцінка й кількість відгуків
 const PUBLIC_PRODUCT_SQL = `
-  SELECT p.id, p.category_id, c.name AS category_name, p.sku, p.name, p.price, p.description, p.in_stock,
+  SELECT p.id, p.category_id, c.name AS category_name, c.parent_id AS category_parent_id,
+         pc.name AS category_parent_name, p.sku, p.name, p.price, p.summary, p.description, p.in_stock,
          ROUND(AVG(r.rating), 1) AS rating, COUNT(r.id) AS reviews_count
   FROM products p
   JOIN categories c ON c.id = p.category_id
+  LEFT JOIN categories pc ON pc.id = c.parent_id
   LEFT JOIN reviews r ON r.product_id = p.id`;
 
 app.get("/api/settings", (req, res) => res.json({ min_order: minOrder() }));
 
+// Контакти магазину (сторінка «Про нас», футер) — редагуються в адмінці
+const CONTACT_KEYS = ["contact_phone", "contact_email", "contact_address", "contact_hours", "contact_telegram", "contact_viber"];
+const contacts = () => Object.fromEntries(CONTACT_KEYS.map((k) => [k.replace("contact_", ""), getSetting(k, "")]));
+app.get("/api/site", (req, res) => res.json({ contacts: contacts() }));
+
+// Стрічка випадкових лотів для головної
+app.get("/api/products/random", (req, res) => {
+  const limit = Math.min(Math.max(toInt(req.query.limit) || 12, 1), 30);
+  res.json({
+    products: withImages(db.prepare(`${PUBLIC_PRODUCT_SQL}
+      WHERE p.is_active = 1 AND p.in_stock = 1 GROUP BY p.id ORDER BY RANDOM() LIMIT ?`).all(limit)),
+  });
+});
+
+// Відгуки з усіх лотів (головна сторінка), найновіші першими
+app.get("/api/reviews", (req, res) => {
+  const limit = Math.min(Math.max(toInt(req.query.limit) || 6, 1), 30);
+  const offset = Math.max(toInt(req.query.offset) || 0, 0);
+  const visible = "FROM reviews r JOIN products p ON p.id = r.product_id WHERE p.is_active = 1";
+  const reviews = db.prepare(`
+    SELECT r.id, r.rating, r.text, COALESCE(r.updated_at, r.created_at) AS created_at, u.name AS author,
+           p.id AS product_id, p.name AS product_name,
+           (SELECT filename FROM product_images i WHERE i.product_id = p.id ORDER BY sort_order LIMIT 1) AS image
+    ${visible.replace("FROM reviews r", "FROM reviews r JOIN users u ON u.id = r.user_id")}
+    ORDER BY COALESCE(r.updated_at, r.created_at) DESC, r.id DESC LIMIT ? OFFSET ?`).all(limit, offset);
+  const stats = db.prepare(`SELECT COUNT(*) AS total, ROUND(AVG(r.rating), 1) AS rating ${visible}`).get();
+  res.json({
+    reviews: reviews.map(({ image, ...r }) => ({ ...r, author: r.author.split(" ")[0], image_url: imageUrl(image) })),
+    total: stats.total, rating: stats.rating,
+  });
+});
+
 app.get("/api/catalog", (req, res) => {
-  const categories = db.prepare("SELECT id, name FROM categories ORDER BY sort_order, name").all();
+  const categories = db.prepare("SELECT id, name, parent_id FROM categories ORDER BY sort_order, name").all();
   const products = withImages(db.prepare(`${PUBLIC_PRODUCT_SQL}
     WHERE p.is_active = 1 GROUP BY p.id ORDER BY p.in_stock DESC, p.name`).all());
   res.json({ categories, products, min_order: minOrder() });
@@ -425,7 +459,8 @@ app.get("/api/products/:id", wrap((req, res) => {
   const recommendations = withImages(db.prepare(`${PUBLIC_PRODUCT_SQL}
     WHERE p.is_active = 1 AND p.in_stock = 1 AND p.id <> ?
     GROUP BY p.id
-    ORDER BY (p.category_id = ?) DESC, RANDOM() LIMIT 8`).all(id, p.category_id));
+    ORDER BY (p.category_id = ?) DESC, (COALESCE(c.parent_id, c.id) = ?) DESC, RANDOM() LIMIT 8`)
+    .all(id, p.category_id, p.category_parent_id ?? p.category_id));
 
   res.json({
     product: withImages([p])[0],
@@ -584,7 +619,7 @@ function startPayment(req, orderId) {
   return payments.checkout({
     payOrderId,
     amount: o.total,
-    description: `Замовлення №${o.id} — Зелений Сад`,
+    description: `Замовлення №${o.id} — Ягідник`,
     resultUrl: `${base}/payment?order=${o.id}&token=${o.access_token}`,
     serverUrl: `${base}${PAYMENT_CALLBACK}`,
   });
@@ -694,17 +729,31 @@ admin.use(requireUser, requireAdmin, express.json({ limit: "40mb" }));
 admin.get("/categories", (req, res) => {
   res.json({
     categories: db.prepare(`
-      SELECT c.id, c.name, c.sort_order, COUNT(p.id) AS product_count
+      SELECT c.id, c.name, c.sort_order, c.parent_id, COUNT(p.id) AS product_count,
+             (SELECT COUNT(*) FROM categories ch WHERE ch.parent_id = c.id) AS child_count
       FROM categories c LEFT JOIN products p ON p.category_id = c.id
       GROUP BY c.id ORDER BY c.sort_order, c.name`).all(),
   });
 });
 
-function categoryInput(body) {
+function categoryInput(body, selfId = null) {
   const name = str(body.name, 100);
   if (!name) throw new HttpError(400, "Вкажіть назву категорії");
   const sort = toInt(body.sort_order ?? 0);
-  return { name, sort: Number.isNaN(sort) ? 0 : sort };
+  return { name, sort: Number.isNaN(sort) ? 0 : sort, parent: parentInput(body.parent_id, selfId) };
+}
+// Батьківська категорія: лише категорія верхнього рівня (максимум два рівні вкладеності)
+function parentInput(value, selfId) {
+  if (value === null || value === undefined || value === "" || Number(value) === 0) return null;
+  const pid = toInt(value);
+  const parent = db.prepare("SELECT id, parent_id FROM categories WHERE id = ?").get(pid);
+  if (!parent) throw new HttpError(400, "Батьківську категорію не знайдено");
+  if (parent.parent_id) throw new HttpError(400, "Підкатегорію можна створити лише в категорії верхнього рівня");
+  if (selfId && pid === selfId) throw new HttpError(400, "Категорія не може бути вкладена сама в себе");
+  if (selfId && db.prepare("SELECT 1 FROM categories WHERE parent_id = ?").get(selfId)) {
+    throw new HttpError(400, "Ця категорія має підкатегорії — її не можна вкласти в іншу");
+  }
+  return pid;
 }
 function uniqueGuard(fn) {
   try { return fn(); } catch (e) {
@@ -714,16 +763,17 @@ function uniqueGuard(fn) {
 }
 
 admin.post("/categories", wrap((req, res) => {
-  const { name, sort } = categoryInput(req.body);
+  const { name, sort, parent } = categoryInput(req.body);
   const id = uniqueGuard(() =>
-    db.prepare("INSERT INTO categories (name, sort_order) VALUES (?, ?)").run(name, sort).lastInsertRowid);
+    db.prepare("INSERT INTO categories (name, sort_order, parent_id) VALUES (?, ?, ?)").run(name, sort, parent).lastInsertRowid);
   res.status(201).json({ id: Number(id) });
 }));
 
 admin.put("/categories/:id", wrap((req, res) => {
-  const { name, sort } = categoryInput(req.body);
+  const cid = toInt(req.params.id);
+  const { name, sort, parent } = categoryInput(req.body, cid);
   const r = uniqueGuard(() =>
-    db.prepare("UPDATE categories SET name = ?, sort_order = ? WHERE id = ?").run(name, sort, toInt(req.params.id)));
+    db.prepare("UPDATE categories SET name = ?, sort_order = ?, parent_id = ? WHERE id = ?").run(name, sort, parent, cid));
   if (!r.changes) throw new HttpError(404, "Категорію не знайдено");
   res.json({ ok: true });
 }));
@@ -734,6 +784,8 @@ const imagesOf = (where, ...params) =>
 
 admin.delete("/categories/:id", wrap((req, res) => {
   const id = toInt(req.params.id);
+  const children = db.prepare("SELECT COUNT(*) AS n FROM categories WHERE parent_id = ?").get(id).n;
+  if (children) throw new HttpError(409, `У категорії є підкатегорії (${children}). Спершу видаліть їх або перенесіть в іншу категорію.`);
   const files = imagesOf("p.category_id = ?", id);
   const r = db.prepare("DELETE FROM categories WHERE id = ?").run(id);
   if (!r.changes) throw new HttpError(404, "Категорію не знайдено");
@@ -755,7 +807,8 @@ function productInput(body) {
   if (!(price >= 0)) throw new HttpError(400, "Ціна має бути цілим числом ≥ 0");
   return {
     name, price,
-    description: str(body.description, 2000),
+    summary: str(body.summary, 300),
+    description: str(body.description, 4000),
     is_active: body.is_active === false ? 0 : 1,
     in_stock: body.in_stock === false ? 0 : 1,
     sku: skuInput(body.sku),
@@ -783,9 +836,9 @@ admin.post("/categories/:id/products", wrap((req, res) => {
   const p = productInput(req.body);
   const id = skuGuard(() => saveWithImages((newFiles) => {
     const pid = Number(db.prepare(`
-      INSERT INTO products (category_id, name, price, description, is_active, in_stock, sku)
-      VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run(catId, p.name, p.price, p.description, p.is_active, p.in_stock, p.sku || null).lastInsertRowid);
+      INSERT INTO products (category_id, name, price, summary, description, is_active, in_stock, sku)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(catId, p.name, p.price, p.summary, p.description, p.is_active, p.in_stock, p.sku || null).lastInsertRowid);
     if (!p.sku) db.prepare("UPDATE products SET sku = ? WHERE id = ?").run(defaultSku(pid), pid);
     return { result: pid, removed: syncImages(pid, req.body.images || [], newFiles) };
   }));
@@ -801,8 +854,8 @@ admin.put("/products/:id", wrap((req, res) => {
   if (!db.prepare("SELECT 1 FROM categories WHERE id = ?").get(catId)) throw new HttpError(400, "Категорію не знайдено");
   skuGuard(() => saveWithImages((newFiles) => {
     db.prepare(`
-      UPDATE products SET category_id = ?, name = ?, price = ?, description = ?, is_active = ?, in_stock = ?, sku = ?
-      WHERE id = ?`).run(catId, p.name, p.price, p.description, p.is_active, p.in_stock, p.sku || defaultSku(pid), pid);
+      UPDATE products SET category_id = ?, name = ?, price = ?, summary = ?, description = ?, is_active = ?, in_stock = ?, sku = ?
+      WHERE id = ?`).run(catId, p.name, p.price, p.summary, p.description, p.is_active, p.in_stock, p.sku || defaultSku(pid), pid);
     // Якщо images не передано — фото не чіпаємо
     const removed = Array.isArray(req.body.images) ? syncImages(pid, req.body.images, newFiles) : [];
     return { result: null, removed };
@@ -851,6 +904,7 @@ const adminSettings = () => ({
   iban_number: getSetting("iban_number", ""),
   iban_code: getSetting("iban_code", ""),
   iban_bank: getSetting("iban_bank", ""),
+  contacts: contacts(),
 });
 admin.get("/settings", (req, res) => res.json(adminSettings()));
 admin.put("/settings", wrap((req, res) => {
@@ -869,6 +923,18 @@ admin.put("/settings", wrap((req, res) => {
     setSetting("iban_code", code);
     setSetting("iban_recipient", str(req.body.iban_recipient, 150));
     setSetting("iban_bank", str(req.body.iban_bank, 100));
+  }
+  // Контакти магазину
+  if (req.body.contacts && typeof req.body.contacts === "object") {
+    const c = req.body.contacts;
+    const email = str(c.email, 120);
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "Некоректний email у контактах");
+    setSetting("contact_phone", str(c.phone, 40));
+    setSetting("contact_email", email);
+    setSetting("contact_address", str(c.address, 200));
+    setSetting("contact_hours", str(c.hours, 100));
+    setSetting("contact_telegram", str(c.telegram, 60).replace(/^https?:\/\/t\.me\//i, "").replace(/^@/, ""));
+    setSetting("contact_viber", str(c.viber, 40));
   }
   const next = {
     cod: getSetting("pay_cod", "1") === "1",
@@ -898,6 +964,13 @@ admin.get("/orders", wrap((req, res) => {
   if (ORDER_STATUSES.includes(status)) { where.push("o.status = ?"); params.push(status); }
   const userId = toInt(req.query.user_id);
   if (userId > 0) { where.push("o.user_id = ?"); params.push(userId); }
+  // Тип покупця: зареєстрований або без реєстрації (гість)
+  const buyer = str(req.query.buyer, 12);
+  if (buyer === "guest") where.push("o.user_id IS NULL");
+  if (buyer === "registered") where.push("o.user_id IS NOT NULL");
+  // Усі замовлення одного гостя (за номером телефону)
+  const guestPhone = str(req.query.guest_phone, 20);
+  if (guestPhone) { where.push("o.user_id IS NULL AND o.phone = ?"); params.push(guestPhone); }
   const pay = str(req.query.payment, 20);
   if (PAYMENT_STATUSES.includes(pay)) { where.push("o.payment_status = ?"); params.push(pay); }
   const q = str(req.query.q, 100);
@@ -956,8 +1029,20 @@ admin.get("/customers", wrap((req, res) => {
     GROUP BY u.id
     ORDER BY (last_order_at IS NULL), last_order_at DESC, u.created_at DESC
     LIMIT 500`).all(q, like, like, like, like);
-  const guests = db.prepare("SELECT COUNT(*) AS n FROM orders WHERE user_id IS NULL").get().n;
-  res.json({ customers, guest_orders: guests });
+  // Покупці без реєстрації: групуємо їхні замовлення за номером телефону
+  const guests = db.prepare(`
+    SELECT o.phone,
+           (SELECT name FROM orders x WHERE x.user_id IS NULL AND x.phone = o.phone ORDER BY x.id DESC LIMIT 1) AS name,
+           (SELECT city FROM orders x WHERE x.user_id IS NULL AND x.phone = o.phone ORDER BY x.id DESC LIMIT 1) AS city,
+           COUNT(*) AS orders_count,
+           COALESCE(SUM(CASE WHEN o.status <> 'cancelled' THEN o.total END), 0) AS spent,
+           MIN(o.created_at) AS first_order_at, MAX(o.created_at) AS last_order_at
+    FROM orders o
+    WHERE o.user_id IS NULL AND (? = '' OR o.name LIKE ? OR o.phone LIKE ? OR o.city LIKE ?)
+    GROUP BY o.phone
+    ORDER BY last_order_at DESC
+    LIMIT 500`).all(q, like, `%${q.replace(/\D/g, "") || q}%`, like);
+  res.json({ customers, guests });
 }));
 
 app.use("/api/admin", admin);
