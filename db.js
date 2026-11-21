@@ -100,6 +100,12 @@ addColumn("orders", "ttn", "TEXT NOT NULL DEFAULT ''");                  // но
 addColumn("orders", "updated_at", "TEXT");
 addColumn("products", "sku", "TEXT");                                    // унікальний код лота
 addColumn("order_items", "sku", "TEXT NOT NULL DEFAULT ''");             // знімок коду на момент покупки
+// Супер-адміністратор: власник магазину. Його права не може змінити жоден інший адміністратор.
+addColumn("users", "is_super", "INTEGER NOT NULL DEFAULT 0");
+// Якщо супер-адміністратора ще немає — ним стає найперший адміністратор (власник)
+if (!db.prepare("SELECT 1 FROM users WHERE is_super = 1").get()) {
+  db.prepare("UPDATE users SET is_super = 1, is_admin = 1 WHERE id = (SELECT MIN(id) FROM users WHERE is_admin = 1)").run();
+}
 // Вкладені категорії: «Фруктові» → «Яблука», «Груші»… (два рівні)
 addColumn("categories", "parent_id", "INTEGER REFERENCES categories(id) ON DELETE CASCADE");
 // Короткий опис (прев'ю) для списку лотів; повний опис — лише на сторінці лота.

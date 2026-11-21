@@ -750,6 +750,37 @@
     searchTimer = setTimeout(() => { customerQ = e.target.value.trim(); loadCustomers(); }, 300);
   };
 
+  // ---------- Ролі: покупець / адміністратор / супер-адміністратор ----------
+  let myId = null;
+  currentUser().then((u) => { myId = u?.id ?? null; });
+  function roleCell(c) {
+    const badge = c.is_super ? `<span class="role-badge super">${icon("shield")} Супер-адмін</span>`
+      : c.is_admin ? `<span class="role-badge admin">${icon("settings")} Адміністратор</span>`
+      : `<span class="role-badge">Покупець</span>`;
+    // Супер-адміністратора й себе змінити не можна
+    if (c.is_super || c.id === myId) return badge;
+    return badge + (c.is_admin
+      ? `<button class="btn-sm danger" data-role="${c.id}" data-make="0" data-name="${esc(c.name)}">Забрати права</button>`
+      : `<button class="btn-sm" data-role="${c.id}" data-make="1" data-name="${esc(c.name)}">Зробити адміном</button>`);
+  }
+  $("customersList").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-role]");
+    if (!b) return;
+    const make = b.dataset.make === "1";
+    const q = make
+      ? `Надати акаунту «${b.dataset.name}» права адміністратора?
+
+Він зможе керувати каталогом, замовленнями, налаштуваннями та правами інших акаунтів (крім супер-адміністратора).`
+      : `Забрати в акаунта «${b.dataset.name}» права адміністратора?`;
+    if (!confirm(q)) return;
+    b.disabled = true;
+    try {
+      await api(`/api/admin/customers/${b.dataset.role}/role`, { method: "PATCH", body: { is_admin: make } });
+      toast(make ? "Права адміністратора надано" : "Права адміністратора забрано");
+      loadCustomers();
+    } catch (err) { alert(err.message); b.disabled = false; }
+  });
+
   async function loadCustomers() {
     try {
       const { customers, guests } = await api(`/api/admin/customers?q=${encodeURIComponent(customerQ)}`);
@@ -759,12 +790,13 @@
         ${customers.length ? "" : `<p class="hint">Не знайдено.</p>`}
         <div class="table-wrap" ${customers.length ? "" : "hidden"}><table class="data">
           <thead><tr>
-            <th>Покупець</th><th>Контакти</th><th>Місце проживання</th><th>Реєстрація</th>
+            <th>Покупець</th><th>Роль</th><th>Контакти</th><th>Місце проживання</th><th>Реєстрація</th>
             <th class="num">Замовлень</th><th class="num">Сума</th><th></th>
           </tr></thead>
           <tbody>${customers.map(c => `
             <tr>
-              <td><b>${esc(c.name)}</b>${c.is_admin ? ` <small>адміністратор</small>` : ""}</td>
+              <td><b>${esc(c.name)}</b>${c.id === myId ? ` <small>(це ви)</small>` : ""}</td>
+              <td>${roleCell(c)}</td>
               <td><a href="mailto:${esc(c.email)}">${esc(c.email)}</a>${c.phone ? `<small>${esc(formatPhone(c.phone))}</small>` : ""}</td>
               <td>${esc(placeLabel(c.city, c.region)) || "<small>—</small>"}</td>
               <td>${fmtDate(c.created_at).split(",")[0]}${c.last_order_at ? `<small>ост. замовлення ${fmtDate(c.last_order_at).split(",")[0]}</small>` : ""}</td>
