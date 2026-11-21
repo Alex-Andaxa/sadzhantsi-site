@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 640">
+  <!-- Тло прозоре: колір дає банер. Ліва частина під текстом порожня. -->
+  <defs>
+    <radialGradient id="ag" cx="1180" cy="360" r="620" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#5a9a55" stop-opacity=".5"/>
+      <stop offset=".55" stop-color="#3f7d45" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#3f7d45" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e8f6ec" stop-opacity=".28"/>
+      <stop offset=".5" stop-color="#cfeadb" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#e8f6ec" stop-opacity=".22"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e3e9ec"/><stop offset=".5" stop-color="#aab5bb"/><stop offset="1" stop-color="#7f8a90"/>
+    </linearGradient>
+    <linearGradient id="wood" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#b98149"/><stop offset="1" stop-color="#8a5a2c"/>
+    </linearGradient>
+    <linearGradient id="pot" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#d9824a"/><stop offset="1" stop-color="#a95a2c"/>
+    </linearGradient>
+    <linearGradient id="can" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#43a39a"/><stop offset="1" stop-color="#2a7770"/>
+    </linearGradient>
+    <path id="lf" d="M0 0C14-15 40-15 56 0 40 15 14 15 0 0Z"/>
+    <g id="sprout">
+      <path d="M0 0C-1-18 1-32 0-44" stroke="#6b8f3a" stroke-width="4" fill="none" stroke-linecap="round"/>
+      <use href="#lf" transform="translate(0 -30) rotate(-150) scale(.6)" fill="#5fae58"/>
+      <use href="#lf" transform="translate(0 -40) rotate(-35) scale(.65)" fill="#4f9a4f"/>
+    </g>
+  </defs>
+
+  <rect width="1600" height="640" fill="url(#ag)"/>
+  <circle cx="1200" cy="380" r="300" fill="#fff" opacity=".035"/>
+  <!-- Земля -->
+  <ellipse cx="1180" cy="640" rx="560" ry="70" fill="#0f2a14" opacity=".35"/>
+
+  <!-- ===== Теплиця ===== -->
+  <!-- Рослини всередині (видно крізь скло) -->
+  <g opacity=".9">
+    <g fill="#3f8a43">
+      <circle cx="1020" cy="505" r="26"/><circle cx="1058" cy="495" r="30"/><circle cx="1100" cy="508" r="24"/>
+      <circle cx="1290" cy="500" r="28"/><circle cx="1330" cy="492" r="32"/><circle cx="1372" cy="505" r="26"/>
+    </g>
+    <g fill="#5fae58">
+      <circle cx="1040" cy="480" r="18"/><circle cx="1085" cy="476" r="16"/>
+      <circle cx="1310" cy="474" r="18"/><circle cx="1355" cy="470" r="16"/>
+    </g>
+    <g fill="#e2474f"><circle cx="1050" cy="498" r="5"/><circle cx="1072" cy="510" r="5"/><circle cx="1340" cy="500" r="5"/><circle cx="1318" cy="512" r="5"/></g>
+    <!-- Ящики з розсадою -->
+    <rect x="1000" y="518" width="120" height="22" rx="3" fill="#7a4e27"/>
+    <rect x="1280" y="518" width="120" height="22" rx="3" fill="#7a4e27"/>
+  </g>
+  <!-- Скло -->
+  <path d="M990 540V300C990 160 1410 160 1410 300V540Z" fill="url(#glass)"/>
+  <!-- Відблиски -->
+  <g stroke="#fff" stroke-width="10" opacity=".12" stroke-linecap="round">
+    <path d="M1010 420 1070 340"/><path d="M1030 450 1110 345"/><path d="M1300 300 1350 236"/>
+  </g>
+  <!-- Каркас -->
+  <g stroke="#eef7ef" stroke-width="7" fill="none" stroke-linejoin="round" stroke-linecap="round" opacity=".9">
+    <path d="M990 540V300C990 160 1410 160 1410 300V540"/>
+    <path d="M990 300H1410"/>
+    <path d="M990 420H1165M1235 420H1410"/>
+    <path d="M1060 300V540M1130 300V540M1270 300V540M1340 300V540"/>
+    <path d="M1004 248C1070 200 1330 200 1396 248"/>
+    <path d="M1060 300 1082 222M1130 300 1140 203M1200 300V196M1270 300 1260 203M1340 300 1318 222"/>
+  </g>
+  <!-- Двері -->
+  <rect x="1165" y="380" width="70" height="160" fill="#cfeadb" opacity=".14"/>
+  <rect x="1165" y="380" width="70" height="160" fill="none" stroke="#eef7ef" stroke-width="7" opacity=".9"/>
+  <path d="M1165 460H1235" stroke="#eef7ef" stroke-width="5" opacity=".8"/>
+  <circle cx="1222" cy="462" r="5" fill="#d9a441"/>
+  <!-- Цоколь -->
+  <rect x="978" y="538" width="444" height="22" rx="4" fill="url(#wood)"/>
+
+  <!-- ===== Лопата, сперта на теплицю ===== -->
+  <g transform="rotate(14 935 470)">
+    <path d="M935 330V560" stroke="url(#wood)" stroke-width="13" stroke-linecap="round"/>
+    <path d="M915 320h40v-10a20 20 0 0 0-40 0z" fill="none" stroke="#8a5a2c" stroke-width="9" stroke-linejoin="round"/>
+    <rect x="925" y="550" width="20" height="22" rx="3" fill="#7f8a90"/>
+    <path d="M907 570h56l-4 54c-6 22-42 22-48 0z" fill="url(#metal)"/>
+    <path d="M918 580l2 36" stroke="#fff" stroke-width="4" opacity=".35" stroke-linecap="round"/>
+  </g>
+
+  <!-- ===== Лійка ===== -->
+  <g transform="translate(790 560)">
+    <path d="M-42 50V-6c0-12 10-20 22-20h44c12 0 22 8 22 20v56z" fill="url(#can)"/>
+    <path d="M-28-26c0-30 56-30 56 0" stroke="#2a7770" stroke-width="9" fill="none" stroke-linecap="round"/>
+    <path d="M46 10 96-38" stroke="#2f8a83" stroke-width="11" stroke-linecap="round"/>
+    <ellipse cx="102" cy="-44" rx="13" ry="8" transform="rotate(-45 102 -44)" fill="#2a7770"/>
+    <path d="M-30 0V36" stroke="#fff" stroke-width="5" opacity=".25" stroke-linecap="round"/>
+  </g>
+
+  <!-- ===== Секатор на землі ===== -->
+  <g transform="translate(1290 608) rotate(-8) scale(1.25)">
+    <path d="M0 0C20-6 50-18 78-14 60-4 30 4 0 6Z" fill="url(#metal)"/>
+    <path d="M0 2C25 8 55 10 80 4 56 18 26 18 0 10Z" fill="#9aa5ab"/>
+    <path d="M2-2C-30-14-60-26-92-30-96-22-92-16-86-14-56-10-28-2-2 8Z" fill="#d23b2f"/>
+    <path d="M-2 8C-30 14-60 24-90 34-96 28-94 20-86 18-58 10-30 4-4 0Z" fill="#a92a20"/>
+    <path d="M-14 2q-6-7-12 0t-12 0" stroke="#c9d1d6" stroke-width="3" fill="none"/>
+    <circle cx="0" cy="4" r="6" fill="#6f7a80"/><circle cx="0" cy="4" r="2.4" fill="#c9d1d6"/>
+  </g>
+
+  <!-- ===== Горщики з розсадою ===== -->
+  <g transform="translate(1470 560)">
+    <use href="#sprout" transform="translate(30 -6)"/>
+    <path d="M0 0h60l-8 52H8z" fill="url(#pot)"/><rect x="-4" y="-6" width="68" height="12" rx="3" fill="#c8703c"/>
+  </g>
+  <g transform="translate(1540 576) scale(.8)">
+    <use href="#sprout" transform="translate(30 -6)"/>
+    <path d="M0 0h60l-8 52H8z" fill="url(#pot)"/><rect x="-4" y="-6" width="68" height="12" rx="3" fill="#c8703c"/>
+  </g>
+</svg>
