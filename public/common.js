@@ -397,7 +397,24 @@ let _sitePromise, _mePromise;
 const siteInfo = () => (_sitePromise ||= api("/api/site").catch(() => ({ contacts: {} })));
 const currentUser = () => (_mePromise ||= api("/api/me").then((r) => r.user).catch(() => null));
 
-// Список контактів (футер, «Про нас»); порожні поля пропускаються
+// Контакти у футері — коротко: телефон, пошта, графік/адреса одним рядком і кнопки месенджерів
+function footerContactsHtml(c = {}) {
+  const tel = (v) => "+" + String(v).replace(/D/g, "");
+  const line = [c.hours, c.address].filter(Boolean).map(esc).join(" · ");
+  const msgs = [
+    c.viber && `<a class="fc-msg viber" href="viber://chat?number=${encodeURIComponent(tel(c.viber))}" aria-label="Написати у Viber" title="Viber">${icon("chat")}<span>Viber</span></a>`,
+    c.telegram && `<a class="fc-msg tg" href="https://t.me/${encodeURIComponent(c.telegram)}" target="_blank" rel="noopener" aria-label="Написати в Telegram" title="Telegram">${icon("send")}<span>Telegram</span></a>`,
+  ].filter(Boolean).join("");
+  if (!c.phone && !c.email && !line && !msgs) return `<p class="hint fc-empty">Контакти незабаром з'являться</p>`;
+  return `<div class="fc">
+    ${c.phone ? `<a class="fc-phone" href="tel:${esc(tel(c.phone))}">${icon("phone")}${esc(c.phone)}</a>` : ""}
+    ${c.email ? `<a class="fc-mail" href="mailto:${esc(c.email)}">${icon("mail")}${esc(c.email)}</a>` : ""}
+    ${line ? `<span class="fc-line">${icon("clock")}${line}</span>` : ""}
+    ${msgs ? `<div class="fc-msgs">${msgs}</div>` : ""}
+  </div>`;
+}
+
+// Список контактів («Про нас»); порожні поля пропускаються
 function contactItems(c = {}) {
   const tel = (v) => "+" + String(v).replace(/\D/g, "");
   return [
@@ -441,7 +458,7 @@ document.addEventListener("DOMContentLoaded", () => {
           </nav>
           <div>
             <b>Контакти</b>
-            ${items.length ? `<ul class="contacts">${items.join("")}</ul>` : `<p class="hint"><a href="/about">Як з нами зв'язатися →</a></p>`}
+            ${footerContactsHtml(c)}
           </div>
         </div>
         <div class="footer-copy">© ${year} Ягідник. Усі права захищено.</div>`;

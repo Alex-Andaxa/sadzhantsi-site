@@ -77,7 +77,8 @@
 
   <!-- ===== Лопата, сперта на теплицю ===== -->
   <g transform="rotate(14 935 470)">
-    <path d="M935 330V560" stroke="url(#wood)" stroke-width="13" stroke-linecap="round"/>
+    <path d="M935 330V560" stroke="#9c6a38" stroke-width="13" stroke-linecap="round"/>
+    <path d="M931 340V552" stroke="#c48a52" stroke-width="3" stroke-linecap="round" opacity=".7"/>
     <path d="M915 320h40v-10a20 20 0 0 0-40 0z" fill="none" stroke="#8a5a2c" stroke-width="9" stroke-linejoin="round"/>
     <rect x="925" y="550" width="20" height="22" rx="3" fill="#7f8a90"/>
     <path d="M907 570h56l-4 54c-6 22-42 22-48 0z" fill="url(#metal)"/>
