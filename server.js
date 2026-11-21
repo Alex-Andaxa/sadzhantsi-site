@@ -717,6 +717,108 @@ function loadOrders(where, params = [], { limit = 500, withUser = false } = {}) 
   }));
 }
 
+// Місто покупця (вікно «Виберіть своє місто») — без зміни решти профілю
+app.put("/api/me/city", requireUser, wrap((req, res) => {
+  db.prepare("UPDATE users SET city = ?, region = ? WHERE id = ?")
+    .run(str(req.body.city, 100), str(req.body.region, 100), req.user.id);
+  res.json({ user: publicUser(db.prepare("SELECT * FROM users WHERE id = ?").get(req.user.id)) });
+}));
+
+// ---------- Списки бажань ----------
+const MAX_LISTS = 20;
+const MAX_WISH_ITEMS = 500;
+// Основний список створюється автоматично
+function defaultListId(userId) {
+  const row = db.prepare("SELECT id FROM wishlists WHERE user_id = ? AND is_default = 1").get(userId);
+  if (row) return row.id;
+  return Number(db.prepare("INSERT INTO wishlists (user_id, name, is_default) VALUES (?, 'Мій список', 1)").run(userId).lastInsertRowid);
+}
+function ownList(userId, listId) {
+  const l = db.prepare("SELECT * FROM wishlists WHERE id = ? AND user_id = ?").get(toInt(listId), userId);
+  if (!l) throw new HttpError(404, "Список не знайдено");
+  return l;
+}
+function wishlistsOf(userId) {
+  defaultListId(userId);
+  const lists = db.prepare("SELECT id, name, is_default FROM wishlists WHERE user_id = ? ORDER BY is_default DESC, id").all(userId);
+  const items = db.prepare(`
+    SELECT wi.list_id, wi.product_id, wi.added_at FROM wishlist_items wi
+    JOIN wishlists w ON w.id = wi.list_id JOIN products p ON p.id = wi.product_id
+    WHERE w.user_id = ? AND p.is_active = 1 ORDER BY wi.added_at DESC`).all(userId);
+  return lists.map((l) => ({ ...l, is_default: !!l.is_default, items: items.filter((i) => i.list_id === l.id).map(({ list_id, ...i }) => i) }));
+}
+function addToList(userId, listId, productId) {
+  if (!db.prepare("SELECT 1 FROM products WHERE id = ? AND is_active = 1").get(productId)) throw new HttpError(404, "Лот не знайдено");
+  const n = db.prepare("SELECT COUNT(*) AS n FROM wishlist_items wi JOIN wishlists w ON w.id = wi.list_id WHERE w.user_id = ?").get(userId).n;
+  if (n >= MAX_WISH_ITEMS) throw new HttpError(400, "У списках бажань забагато товарів");
+  db.prepare("INSERT OR IGNORE INTO wishlist_items (list_id, product_id) VALUES (?, ?)").run(listId, productId);
+}
+
+app.get("/api/wishlists", requireUser, (req, res) => res.json({ lists: wishlistsOf(req.user.id) }));
+
+app.post("/api/wishlists", requireUser, wrap((req, res) => {
+  const name = str(req.body.name, 60);
+  if (!name) throw new HttpError(400, "Вкажіть назву списку");
+  const count = db.prepare("SELECT COUNT(*) AS n FROM wishlists WHERE user_id = ?").get(req.user.id).n;
+  if (count >= MAX_LISTS) throw new HttpError(400, `Можна створити до ${MAX_LISTS} списків`);
+  const id = Number(db.prepare("INSERT INTO wishlists (user_id, name) VALUES (?, ?)").run(req.user.id, name).lastInsertRowid);
+  res.status(201).json({ id, lists: wishlistsOf(req.user.id) });
+}));
+
+app.patch("/api/wishlists/:id", requireUser, wrap((req, res) => {
+  const l = ownList(req.user.id, req.params.id);
+  const name = str(req.body.name, 60);
+  if (!name) throw new HttpError(400, "Вкажіть назву списку");
+  db.prepare("UPDATE wishlists SET name = ? WHERE id = ?").run(name, l.id);
+  res.json({ lists: wishlistsOf(req.user.id) });
+}));
+
+app.delete("/api/wishlists/:id", requireUser, wrap((req, res) => {
+  const l = ownList(req.user.id, req.params.id);
+  if (l.is_default) throw new HttpError(400, "Основний список не можна видалити");
+  db.prepare("DELETE FROM wishlists WHERE id = ?").run(l.id);
+  res.json({ lists: wishlistsOf(req.user.id) });
+}));
+
+// Додати товар (за замовчуванням — в основний список)
+app.put("/api/wishlists/items/:productId", requireUser, wrap((req, res) => {
+  const listId = req.body.list_id ? ownList(req.user.id, req.body.list_id).id : defaultListId(req.user.id);
+  addToList(req.user.id, listId, toInt(req.params.productId));
+  res.json({ lists: wishlistsOf(req.user.id) });
+}));
+
+// Прибрати товар з одного списку або (без list_id) з усіх
+app.delete("/api/wishlists/items/:productId", requireUser, wrap((req, res) => {
+  const pid = toInt(req.params.productId);
+  if (req.query.list_id) {
+    db.prepare("DELETE FROM wishlist_items WHERE list_id = ? AND product_id = ?").run(ownList(req.user.id, req.query.list_id).id, pid);
+  } else {
+    db.prepare("DELETE FROM wishlist_items WHERE product_id = ? AND list_id IN (SELECT id FROM wishlists WHERE user_id = ?)").run(pid, req.user.id);
+  }
+  res.json({ lists: wishlistsOf(req.user.id) });
+}));
+
+// Перенести товар в інший список
+app.post("/api/wishlists/items/:productId/move", requireUser, wrap((req, res) => {
+  const pid = toInt(req.params.productId);
+  const from = ownList(req.user.id, req.body.from);
+  const to = ownList(req.user.id, req.body.to);
+  tx(() => {
+    addToList(req.user.id, to.id, pid);
+    if (from.id !== to.id) db.prepare("DELETE FROM wishlist_items WHERE list_id = ? AND product_id = ?").run(from.id, pid);
+  });
+  res.json({ lists: wishlistsOf(req.user.id) });
+}));
+
+// Після входу: перенести в основний список те, що гість відмітив до реєстрації
+app.post("/api/wishlists/merge", requireUser, wrap((req, res) => {
+  const ids = Array.isArray(req.body.product_ids) ? req.body.product_ids.slice(0, 200).map(toInt).filter((n) => n > 0) : [];
+  const listId = defaultListId(req.user.id);
+  const ok = db.prepare("SELECT 1 FROM products WHERE id = ? AND is_active = 1");
+  tx(() => { for (const id of ids) if (ok.get(id)) db.prepare("INSERT OR IGNORE INTO wishlist_items (list_id, product_id) VALUES (?, ?)").run(listId, id); });
+  res.json({ lists: wishlistsOf(req.user.id) });
+}));
+
 app.get("/api/me/orders", requireUser, (req, res) => {
   res.json({ orders: loadOrders("o.user_id = ?", [req.user.id]) });
 });

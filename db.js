@@ -131,6 +131,22 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_reviews_product ON reviews(product_id);
 
+  -- Списки бажань (як на ROZETKA): у кожного покупця є основний список і можна створити свої
+  CREATE TABLE IF NOT EXISTS wishlists (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    is_default INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_wishlists_user ON wishlists(user_id);
+  CREATE TABLE IF NOT EXISTS wishlist_items (
+    list_id    INTEGER NOT NULL REFERENCES wishlists(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    added_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (list_id, product_id)
+  );
+
   -- Налаштування магазину (ключ → значення)
   CREATE TABLE IF NOT EXISTS settings (
     key   TEXT PRIMARY KEY,
