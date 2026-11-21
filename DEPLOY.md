@@ -171,6 +171,39 @@ systemctl reload caddy
 
 Caddy сам отримає безкоштовний сертифікат. Відкрийте `https://yahidnyk.com` — сайт має працювати із замочком 🔒.
 
+### 6а. Робота через Cloudflare (рекомендовано)
+
+Cloudflare стає «щитом» перед сервером: ховає його IP, фільтрує ботів і DDoS, кешує картинки.
+
+**У Cloudflare (dash.cloudflare.com → yahidnyk.com):**
+
+1. **SSL/TLS → Origin Server → Create Certificate**: RSA (2048), hostnames `yahidnyk.com`, `*.yahidnyk.com`,
+   термін 15 років → **Create**. Скопіюйте **Origin Certificate** і **Private Key** у два файли на своєму комп'ютері
+   поза папкою сайту, напр. `C:\Users\<ви>\cf-origin\origin.pem` і `origin.key`. Ключ покажуть лише один раз.
+2. **DNS → Records**: записи `A` для `yahidnyk.com` і `www` → IP сервера, **Proxy status: Proxied** (помаранчева хмаринка).
+3. **SSL/TLS → Overview**: режим **Full (strict)**.
+4. **SSL/TLS → Edge Certificates**: увімкнути **Always Use HTTPS**, **Minimum TLS Version: 1.2**.
+5. **Security → Bots**: увімкнути **Bot Fight Mode**.
+6. **Security → WAF → Rate limiting rules** (безкоштовно 1 правило): якщо URI Path починається з `/api/auth/`,
+   то більше 20 запитів за 10 секунд з однієї IP → Block на 10 секунд.
+
+**На сервері:**
+
+```powershell
+# з комп'ютера: сертифікат на сервер
+scp $env:USERPROFILE\cf-origin\origin.pem $env:USERPROFILE\cf-origin\origin.key root@IP_СЕРВЕРА:/root/
+```
+```bash
+mkdir -p /etc/caddy/certs && mv /root/origin.pem /root/origin.key /etc/caddy/certs/
+bash /home/shop/sadzhantsi-site/deploy/cloudflare-setup.sh
+```
+
+Скрипт налаштує Caddy на сертифікат Cloudflare, передачу сайту справжньої IP відвідувача і відкриє порти 80/443
+**лише для Cloudflare** — напряму на IP сервера сайт більше не відкриється. Раз на кілька місяців варто
+запустити скрипт ще раз (оновить список адрес Cloudflare).
+
+Після оновлення стилів сайту, якщо зміни не видно: Cloudflare → **Caching → Configuration → Purge Everything**.
+
 ## 7. Резервні копії (щодня о 3:00)
 
 ```bash
