@@ -10,18 +10,7 @@
 </head>
 <body>
 
-<header>
-  <div class="container nav">
-    <a href="/" class="logo"><img src="/img/logo.svg" alt="" class="logo-icon">Ягідник</a>
-    <nav class="nav-links">
-      <a href="/catalog">Каталог</a>
-      <a href="/about">Про нас</a>
-    </nav>
-    <div class="nav-actions">
-      <a href="/" class="account-link">← До магазину</a>
-    </div>
-  </div>
-</header>
+<header class="site-header" id="siteHeader"></header>
 
 <main class="container page">
 
@@ -122,6 +111,7 @@
     if (!typed) place = { city: "", region: "" };
     else if (typed !== placeText()) throw new Error("Оберіть місце проживання зі списку підказок");
     me = (await api("/api/me", { method: "PUT", body: { ...data, ...place } })).user;
+    try { localStorage.setItem("city", JSON.stringify({ city: me.city, region: me.region })); } catch (e) {}
     $("hello").textContent = `Вітаємо, ${me.name}!`;
     ok(errEl, "Збережено ✓");
   });

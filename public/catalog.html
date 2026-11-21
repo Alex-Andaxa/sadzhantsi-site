@@ -11,31 +11,13 @@
 </head>
 <body>
 
-<header>
-  <div class="container nav">
-    <a href="/" class="logo"><img src="/img/logo.svg" alt="" class="logo-icon">Ягідник</a>
-    <nav class="nav-links">
-      <a href="/catalog">Каталог</a>
-      <a href="/about">Про нас</a>
-    </nav>
-    <div class="nav-actions">
-      <span class="nav-actions" id="authLinks">
-        <a href="/login" class="account-link" aria-label="Увійти"><i data-ic="user"></i><span class="auth-label">Увійти</span></a>
-        <a href="/register" class="account-link hide-sm">Реєстрація</a>
-      </span>
-      <button class="cart-btn" type="button" data-open-cart aria-label="Кошик"><i data-ic="cart"></i><span class="cart-label">Кошик</span><span class="badge cart-count">0</span></button>
-    </div>
-  </div>
-</header>
+<header class="site-header" id="siteHeader"></header>
 
 <main class="container page">
   <div class="crumbs"><a href="/">Головна</a> › <span id="crumbCat">Каталог</span></div>
   <div class="catalog-layout">
     <!-- Бокова панель: пошук, категорії, фільтри -->
     <aside class="catalog-side" id="side">
-      <div class="side-block">
-        <input type="search" id="q" placeholder="Пошук саджанців" aria-label="Пошук у каталозі" autocomplete="off">
-      </div>
       <div class="side-block">
         <p class="side-title">Категорії</p>
         <ul class="side-cats" id="cats"></ul>
@@ -199,7 +181,10 @@
   $("subChips").addEventListener("click", pickCat);
   let t;
   const later = (fn) => { clearTimeout(t); t = setTimeout(fn, 200); };
-  $("q").addEventListener("input", (e) => later(() => { state.q = e.target.value; render(); }));
+  // Пошук — у шапці сайту: на цій сторінці він фільтрує товари одразу
+  window.SITE_SEARCH_LIVE = true;
+  const headerSearch = () => document.querySelector(".hdr-search input");
+  document.addEventListener("site:search", (e) => later(() => { state.q = e.detail; render(); }));
   $("priceMin").addEventListener("input", (e) => later(() => { state.min = e.target.value; render(); }));
   $("priceMax").addEventListener("input", (e) => later(() => { state.max = e.target.value; render(); }));
   $("onlyStock").addEventListener("change", (e) => { state.stock = e.target.checked; render(); });
@@ -223,7 +208,7 @@
   bindProductCards($("products"), (id) => products.find(p => p.id === id));
 
   function fillControls() {
-    $("q").value = state.q;
+    if (headerSearch()) headerSearch().value = state.q;
     $("priceMin").value = state.min;
     $("priceMax").value = state.max;
     $("onlyStock").checked = state.stock;

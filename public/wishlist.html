@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Списки бажань — Ягідник</title>
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="/img/logo.svg" type="image/svg+xml">
+</head>
+<body>
+
+<header class="site-header" id="siteHeader"></header>
+
+<main class="container page">
+  <div class="crumbs"><a href="/">Головна</a> › Списки бажань</div>
+  <div class="wl-head">
+    <h1>Списки бажань</h1>
+    <div class="wl-head-actions" id="headActions"></div>
+  </div>
+  <div id="guestNote" class="guest-note" hidden>
+    <b>Список збережено лише в цьому браузері.</b>
+    <a href="/login?next=/wishlist">Увійдіть</a> або <a href="/register">зареєструйтесь</a>, щоб зберігати обране в акаунті,
+    бачити його на всіх пристроях і створювати кілька списків.
+  </div>
+  <div class="wl-tabs" id="tabs" role="tablist" hidden></div>
+  <div id="listBar" class="wl-bar" hidden></div>
+  <div class="grid catalog-grid" id="items"><p class="hint">Завантаження…</p></div>
+</main>
+
+<footer id="siteFooter" class="site-footer"></footer>
+
+<script src="/common.js"></script>
+<script>
+  let products = [];
+  let currentList = null; // id списку (для зареєстрованих)
+
+  const byId = (id) => products.find((p) => p.id === id);
+  const lists = () => Wish.lists;
+  const current = () => lists().find((l) => l.id === currentList) || lists()[0];
+
+  // Товари поточного списку (лише ті, що є в каталозі)
+  function currentItems() {
+    const ids = Wish.user ? (current()?.items || []).map((i) => i.product_id) : [...Wish.local].reverse();
+    return ids.map(byId).filter(Boolean);
+  }
+
+  function render() {
+    $("guestNote").hidden = !!Wish.user;
+    // Вкладки списків
+    $("tabs").hidden = !Wish.user;
+    if (Wish.user) {
+      if (!current()) return;
+      currentList = current().id;
+      $("tabs").innerHTML = lists().map((l) => `
+        <button type="button" role="tab" class="sub-chip ${l.id === currentList ? "active" : ""}" data-list="${l.id}" aria-selected="${l.id === currentList}">
+          ${l.is_default ? icon("heart") : ""}${esc(l.name)} <small>${l.items.filter((i) => byId(i.product_id)).length}</small>
+        </button>`).join("") +
+        `<button type="button" class="sub-chip wl-new" id="newList">${icon("plus")} Новий список</button>`;
+    }
+
+    const items = currentItems();
+    const inStock = items.filter((p) => p.in_stock);
+    const sum = inStock.reduce((s, p) => s + p.price, 0);
+    $("headActions").innerHTML = items.length ? `
+      <span class="hint">${items.length} ${plural(items.length, "товар", "товари", "товарів")} · ${fmt(sum)}</span>
+      <button class="btn" type="button" id="buyAll" ${inStock.length ? "" : "disabled"}>${icon("cart")} Купити все</button>` : "";
+
+    // Дії зі списком: перейменувати / видалити (крім основного)
+    const l = current();
+    $("listBar").hidden = !(Wish.user && l && !l.is_default);
+    if (!$("listBar").hidden) {
+      $("listBar").innerHTML = `
+        <button class="btn-sm" type="button" id="renameList">${icon("edit")} Перейменувати список</button>
+        <button class="btn-sm danger" type="button" id="deleteList">${icon("trash")} Видалити список</button>`;
+    }
+
+    $("items").innerHTML = items.length
+      ? items.map((p) => `
+          <div class="wl-item">
+            ${productCardHtml(p)}
+            ${Wish.user && lists().length > 1 ? `
+              <label class="wl-move">Перенести в
+                <select data-move="${p.id}">
+                  <option value="">— оберіть список</option>
+                  ${lists().filter((x) => x.id !== currentList).map((x) => `<option value="${x.id}">${esc(x.name)}</option>`).join("")}
+                </select>
+              </label>` : ""}
+          </div>`).join("")
+      : `<div class="empty wl-empty">
+           <div class="empty-ic">${icon("heart")}</div>
+           <h3>${Wish.user && l && !l.is_default ? "У цьому списку поки порожньо" : "Список бажань порожній"}</h3>
+           <p class="hint">Натискайте ♥ на картках саджанців, щоб зберегти їх тут.</p>
+           <a class="btn" href="/catalog">До каталогу</a>
+         </div>`;
+  }
+
+  bindProductCards($("items"), byId);
+
+  // Сердечко на картці прибирає товар з усіх списків — оновлюємо сторінку
+  document.addEventListener("wish:change", () => { if (products.length) render(); });
+
+  $("tabs").addEventListener("click", async (e) => {
+    const tab = e.target.closest("[data-list]");
+    if (tab) { currentList = Number(tab.dataset.list); render(); return; }
+    if (e.target.closest("#newList")) {
+      const name = prompt("Назва нового списку (напр. «Для дачі», «Подарунок мамі»):");
+      if (!name?.trim()) return;
+      try {
+        const r = await api("/api/wishlists", { method: "POST", body: { name } });
+        currentList = r.id;
+        Wish.setLists(r.lists);
+      } catch (err) { toast(err.message); }
+    }
+  });
+
+  $("listBar").addEventListener("click", async (e) => {
+    const l = current();
+    try {
+      if (e.target.closest("#renameList")) {
+        const name = prompt("Нова назва списку:", l.name);
+        if (!name?.trim()) return;
+        Wish.setLists((await api(`/api/wishlists/${l.id}`, { method: "PATCH", body: { name } })).lists);
+      }
+      if (e.target.closest("#deleteList")) {
+        if (!confirm(`Видалити список «${l.name}»?`)) return;
+        currentList = null;
+        Wish.setLists((await api(`/api/wishlists/${l.id}`, { method: "DELETE", body: {} })).lists);
+      }
+    } catch (err) { toast(err.message); }
+  });
+
+  $("items").addEventListener("change", async (e) => {
+    const sel = e.target.closest("[data-move]");
+    if (!sel?.value) return;
+    try {
+      const r = await api(`/api/wishlists/items/${sel.dataset.move}/move`, { method: "POST", body: { from: currentList, to: Number(sel.value) } });
+      Wish.setLists(r.lists);
+      toast("Перенесено");
+    } catch (err) { toast(err.message); }
+  });
+
+  $("headActions").addEventListener("click", (e) => {
+    if (!e.target.closest("#buyAll")) return;
+    currentItems().filter((p) => p.in_stock).forEach((p) => { if (!Cart.get()[p.id]) Cart.add(p.id, 1); });
+    CartUI.badge();
+    CartUI.open();
+  });
+
+  (async () => {
+    try {
+      await Promise.all([CartUI.load(), Wish.load()]);
+      products = CartUI.products;
+      render();
+    } catch (err) {
+      $("items").innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    }
+  })();
+</script>
+</body>
+</html>

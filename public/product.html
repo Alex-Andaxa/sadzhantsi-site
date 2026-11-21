@@ -10,22 +10,7 @@
 </head>
 <body>
 
-<header>
-  <div class="container nav">
-    <a href="/" class="logo"><img src="/img/logo.svg" alt="" class="logo-icon">Ягідник</a>
-    <nav class="nav-links">
-      <a href="/catalog">Каталог</a>
-      <a href="/about">Про нас</a>
-    </nav>
-    <div class="nav-actions">
-      <span class="nav-actions" id="authLinks">
-        <a href="/login" class="account-link" aria-label="Увійти"><i data-ic="user"></i><span class="auth-label">Увійти</span></a>
-        <a href="/register" class="account-link hide-sm">Реєстрація</a>
-      </span>
-      <button class="cart-btn" type="button" data-open-cart aria-label="Кошик"><i data-ic="cart"></i><span class="cart-label">Кошик</span><span class="badge cart-count">0</span></button>
-    </div>
-  </div>
-</header>
+<header class="site-header" id="siteHeader"></header>
 
 <main class="container page product-page">
   <div id="view"><p class="hint">Завантаження…</p></div>
@@ -144,6 +129,10 @@
               <button class="btn" id="addBtn">${icon("cart")} Купити</button>
             </div>`
           : `<p class="hint">Цього саджанця зараз немає в наявності. Зателефонуйте нам — підкажемо, коли з'явиться.</p>`}
+          <div class="lot-actions-row">
+            <button type="button" class="btn-outline wish-wide ${Wish.ready && Wish.has(p.id) ? "on" : ""}" data-wish="${p.id}">${icon("heart")}<span class="w-off">У список бажань</span><span class="w-on">У списку бажань</span></button>
+            <button type="button" class="btn-outline" id="shareBtn">${icon("share")} Поділитися</button>
+          </div>
           <div class="panel" style="margin-top:20px">
             <b class="with-ic">${icon("truck")} Доставка</b>
             <p class="hint" style="margin:6px 0 0">Нова Пошта або Укрпошта, 1–3 дні. Відділення обираєте під час оформлення замовлення.</p>
@@ -173,8 +162,9 @@
     renderGallery();
     renderReviews();
 
+    $("shareBtn").onclick = (e) => shareLot({ title: `${p.name} — Ягідник`, url: location.origin + "/product?id=" + p.id, anchor: e.currentTarget });
     $("pgMain").addEventListener("click", (e) => {
-      const step = e.target.dataset.step;
+      const step = e.target.closest("[data-step]")?.dataset.step;
       if (!step) return;
       idx = (idx + Number(step) + p.images.length) % p.images.length;
       renderGallery();

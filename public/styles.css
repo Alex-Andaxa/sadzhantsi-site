@@ -859,3 +859,191 @@ dialog { overscroll-behavior: contain; }
 @media (max-width: 640px) { .settings-grid { grid-template-columns: 1fr; } .settings-actions { flex-direction: column-reverse; align-items: stretch; } }
 .up-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .up-info { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 4px 24px; }
+
+/* =====================================================================
+   Шапка: бургер · логотип · каталог · пошук · тема · обране · кабінет · кошик
+   ===================================================================== */
+.site-header { position: sticky; top: 0; z-index: 30; background: var(--card); border-bottom: 1px solid var(--border); min-height: 68px; }
+.hdr { display: grid; grid-template-columns: auto auto auto minmax(0, 1fr) auto; align-items: center; gap: 12px; min-height: 68px; }
+.hdr .logo { gap: 8px; }
+.hdr-btn {
+  position: relative; display: inline-grid; place-items: center; width: 44px; height: 44px; padding: 0;
+  border: 0; border-radius: 12px; background: none; color: var(--text); cursor: pointer; text-decoration: none;
+}
+.hdr-btn:hover { background: var(--green-light); color: var(--green); }
+.hdr-btn .ic { width: 24px; height: 24px; }
+.hdr-btn.theme-btn { border: 0; }
+.hdr-btn.theme-btn .ic { width: 21px; height: 21px; }
+.hdr-account.on { color: var(--green); }
+.hdr-icons { display: flex; align-items: center; gap: 4px; }
+/* Лічильник — зелений кружечок у куті іконки */
+.hdr-badge {
+  position: absolute; top: 2px; right: 0; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+  display: grid; place-items: center; background: #2fa84f; color: #fff; font-size: .72rem; font-weight: 700; line-height: 1;
+  box-shadow: 0 0 0 2px var(--card); pointer-events: none;
+}
+.hdr-badge[hidden] { display: none; }
+.hdr-catalog {
+  display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px; border-radius: 12px;
+  background: var(--green); color: #fff; text-decoration: none; font-weight: 600;
+}
+.hdr-catalog:hover { background: var(--green-dark); }
+.hdr-catalog .ic { width: 20px; height: 20px; }
+
+/* Пошук */
+.hdr-search { position: relative; display: flex; align-items: center; height: 44px; margin: 0; gap: 0; flex-direction: row; }
+.hdr-search input[type="search"] {
+  height: 44px; padding: 0 92px 0 42px; border-radius: 12px; border: 2px solid var(--border); background-color: var(--input-bg);
+  background-image: none; font-size: 1rem; width: 100%;
+}
+.hdr-search input[type="search"]:focus { border-color: var(--green); outline: none; }
+.hs-ic { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: var(--muted); display: flex; pointer-events: none; }
+.hs-ic .ic { width: 18px; height: 18px; }
+.hs-go {
+  position: absolute; right: 4px; top: 4px; bottom: 4px; padding: 0 16px; border: 0; border-radius: 9px;
+  background: var(--green); color: #fff; font: inherit; font-weight: 600; cursor: pointer;
+}
+.hs-go:hover { background: var(--green-dark); }
+.hs-suggest {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0; z-index: 40; background: var(--card);
+  border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; padding: 6px;
+}
+.hs-item { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 8px; color: var(--text); text-decoration: none; }
+.hs-item:hover, .hs-item.on { background: var(--green-light); }
+.hs-img { width: 44px; height: 44px; flex: 0 0 44px; border-radius: 8px; overflow: hidden; background: var(--green-light); }
+.hs-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.hs-img .no-photo { width: 100%; height: 100%; font-size: 1.4rem; }
+.hs-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hs-name small { display: block; color: var(--danger); font-size: .78rem; }
+.hs-all { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 10px; margin-top: 4px; border-top: 1px solid var(--border); color: var(--green); font-weight: 600; text-decoration: none; }
+.hs-all .ic { width: 16px; height: 16px; }
+.hs-empty { margin: 0; padding: 14px; color: var(--muted); text-align: center; }
+
+@media (max-width: 900px) {
+  .hdr-catalog span { display: none; }
+  .hdr-catalog { width: 44px; padding: 0; justify-content: center; }
+}
+@media (max-width: 760px) {
+  .hdr { grid-template-columns: auto auto 1fr auto; grid-template-areas: "burger logo . icons" "search search search search"; gap: 6px 8px; padding-top: 8px; padding-bottom: 10px; }
+  .hdr-burger { grid-area: burger; }
+  .hdr .logo { grid-area: logo; }
+  .hdr-icons { grid-area: icons; }
+  .hdr-search { grid-area: search; }
+  .hdr-catalog, .hdr-icons .theme-btn { display: none; }
+  .hdr .logo-text { font-size: 1.1rem; }
+  .hdr .logo-icon { width: 30px; height: 30px; flex-basis: 30px; }
+  .hdr-btn { width: 40px; height: 40px; }
+  .hs-go { display: none; }
+  .hdr-search input[type="search"] { padding-right: 14px; font-size: 16px; }
+}
+
+/* ---------- Бокове меню ---------- */
+dialog.side-drawer {
+  margin: 0; padding: 0; height: 100dvh; max-height: 100dvh; width: min(340px, 88vw); max-width: none;
+  border: 0; border-radius: 0 16px 16px 0; transform: translateX(-102%); transition: transform .22s ease;
+  display: flex; flex-direction: column;
+}
+dialog.side-drawer:not([open]) { display: none; }
+dialog.side-drawer.open { transform: none; }
+.dr-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--border); }
+.dr-body { overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; overscroll-behavior: contain; }
+.dr-user { padding: 4px 4px 0; }
+.dr-auth { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.dr-auth a { text-decoration: none; justify-content: center; }
+.dr-account { display: flex; align-items: center; gap: 12px; padding: 10px; border-radius: 12px; background: var(--green-light); color: var(--text); text-decoration: none; }
+.dr-account .ic { width: 36px; height: 36px; padding: 7px; border-radius: 50%; background: var(--card); color: var(--green); }
+.dr-account span { display: flex; flex-direction: column; min-width: 0; }
+.dr-account small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.dr-city {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px; border-radius: 12px; text-align: left;
+  border: 1px solid var(--border); background: var(--card); color: var(--text); font: inherit; cursor: pointer;
+}
+.dr-city:hover { border-color: var(--green); }
+.dr-city > .ic { width: 22px; height: 22px; color: var(--green); }
+.dr-city span { flex: 1; display: flex; flex-direction: column; }
+.dr-city small { color: var(--muted); font-size: .8rem; }
+.dr-city > .dr-chev { width: 16px; height: 16px; color: var(--muted); }
+.dr-nav { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--border); padding-top: 10px; }
+.dr-nav > a, .dr-nav > button, .dr-theme {
+  display: flex; align-items: center; gap: 12px; padding: 11px 12px; border-radius: 10px; border: 0; background: none;
+  color: var(--text); font: inherit; text-decoration: none; text-align: left; cursor: pointer; width: 100%;
+}
+.dr-nav > a:hover, .dr-nav > button:hover, .dr-theme:hover { background: var(--green-light); }
+.dr-nav > a.active { background: var(--green-light); color: var(--green); font-weight: 600; }
+.dr-nav .ic, .dr-theme .ic { width: 21px; height: 21px; color: var(--green); }
+.dr-cats { display: flex; flex-direction: column; margin: 0 0 4px 45px; border-left: 2px solid var(--border); }
+.dr-cats:empty { display: none; }
+.dr-cats a { padding: 7px 12px; color: var(--muted); text-decoration: none; font-size: .94rem; }
+.dr-cats a:hover { color: var(--green); }
+.dr-count { margin-left: auto; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px; background: #2fa84f; color: #fff; font-size: .75rem; font-weight: 700; display: grid; place-items: center; }
+.dr-count[hidden] { display: none; }
+.dr-theme { border-top: 1px solid var(--border); border-radius: 0; padding-top: 14px; }
+
+/* ---------- Вікно «Виберіть своє місто» ---------- */
+dialog.city-modal { padding: 0; width: min(640px, calc(100% - 24px)); border-radius: 14px; overflow: visible; }
+.city-body { padding: 16px 20px 6px; display: flex; flex-direction: column; gap: 12px; }
+.city-body p { margin: 0; }
+.city-body .error:empty { display: none; }
+.city-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 6px 0 4px; }
+.city-foot { display: flex; justify-content: flex-end; padding: 14px 20px 18px; }
+.city-modal .ac-list { max-height: 260px; }
+
+/* ---------- Списки бажань ---------- */
+.card { position: relative; }
+.wish-btn {
+  display: grid; place-items: center; width: 38px; height: 38px; padding: 0; border-radius: 50%; cursor: pointer;
+  border: 0; background: rgba(255,255,255,.92); color: #5d6b5d; box-shadow: 0 2px 8px rgba(0,0,0,.12);
+  transition: transform .15s, color .15s;
+}
+.wish-btn .ic { width: 20px; height: 20px; }
+.wish-btn:hover { color: #e0414b; transform: scale(1.08); }
+.wish-btn.on { color: #e0414b; }
+.wish-btn.on .ic, .wish-wide.on .ic { fill: currentColor; }
+.card-wish { position: absolute; top: 10px; right: 10px; z-index: 3; }
+:root[data-theme="dark"] .wish-btn { background: rgba(25,32,25,.9); color: #b9c5b8; }
+.lot-actions-row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 14px; position: relative; }
+.wish-wide .w-on, .wish-wide.on .w-off { display: none; }
+.wish-wide.on .w-on { display: inline; }
+.wish-wide.on { color: #e0414b; border-color: #e0414b; }
+.wish-wide .ic { width: 18px; height: 18px; }
+.lot-actions-row .btn-outline { min-height: 42px; padding: 0 18px; }
+.wl-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+.wl-head h1 { margin: 0; font-size: clamp(1.5rem, 3vw, 2rem); }
+.wl-head-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.wl-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.wl-tabs .sub-chip .ic { width: 15px; height: 15px; }
+.wl-new { border-style: dashed; color: var(--green); }
+.wl-bar { display: flex; gap: 8px; margin-bottom: 14px; }
+.wl-item { display: flex; flex-direction: column; gap: 6px; }
+.wl-item .card { flex: 1; }
+.wl-move { font-size: .85rem; }
+.wl-move select { padding: 6px 8px; font-size: .9rem; }
+.wl-empty { grid-column: 1 / -1; }
+.wl-empty .btn { text-decoration: none; margin-top: 8px; }
+
+/* ---------- Поділитися ---------- */
+.share-pop {
+  position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; min-width: 230px; padding: 6px;
+  background: var(--card); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow);
+  display: flex; flex-direction: column;
+}
+.share-pop a, .share-pop button {
+  display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; border: 0; background: none;
+  color: var(--text); font: inherit; text-decoration: none; text-align: left; cursor: pointer;
+}
+.share-pop a:hover, .share-pop button:hover { background: var(--green-light); }
+.share-pop .ic { width: 18px; height: 18px; color: var(--green); }
+
+/* ---------- Сповіщення ---------- */
+.toast {
+  position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); z-index: 100; transform: translate(-50%, 20px);
+  background: #1f2a1f; color: #fff; padding: 11px 18px; border-radius: 12px; box-shadow: var(--shadow);
+  opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s; max-width: calc(100% - 32px); text-align: center;
+}
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- «Про нас»: теплиця ---------- */
+.page-hero { min-height: 300px; }
+.hero-art.about-art { background-image: url("/img/about.svg"); }
+@media (max-width: 520px) { .page-hero { min-height: 200px; } }
+.side-drawer :focus:not(:focus-visible), .city-modal :focus:not(:focus-visible) { outline: none; }

@@ -45,6 +45,12 @@ const ICON_PATHS = {
   arrowLeft: '<path d="m12 19-7-7 7-7M19 12H5"/>',
   arrowRight: '<path d="M5 12h14M12 5l7 7-7 7"/>',
   search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+  share: '<circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="m8.59 13.51 6.83 3.98M15.41 6.51l-6.82 3.98"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  store: '<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
   logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
 };
 function icon(name, cls = "") {
@@ -207,6 +213,7 @@ function productCardHtml(p) {
   const url = `/product?id=${p.id}`;
   return `
     <article class="card ${p.in_stock ? "" : "out"}">
+      ${wishBtnHtml(p.id, "card-wish")}
       <a href="${url}" class="card-link card-img" data-gal="${p.id}" aria-label="${esc(p.name)}">${cardGalleryHtml(p)}</a>
       <div class="card-body">
         <a href="${url}" class="card-link"><h3>${esc(p.name)}</h3></a>
@@ -429,6 +436,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <b>Покупцям</b>
             <a href="/catalog">Каталог</a>
             <a href="/about">Про нас</a>
+            <a href="/wishlist">Списки бажань</a>
             <a href="/account">Особистий кабінет</a>
           </nav>
           <div>
@@ -765,8 +773,11 @@ const CartUI = {
   minOrder: 0,
   async load(force = false) {
     if (this.products && !force) return;
-    const c = await api("/api/catalog");
+    if (!force && this._loading) return this._loading; // одночасні виклики — один запит
+    this._loading = api("/api/catalog").finally(() => (this._loading = null));
+    const c = await this._loading;
     this.products = c.products;
+    this.categories = c.categories;
     this.minOrder = c.min_order || 0;
   },
   // Позиції кошика з актуальними даними; зниклі з каталогу товари прибираються
@@ -790,7 +801,8 @@ const CartUI = {
     return { lines, total, hasOut, lack, count: lines.reduce((s, l) => s + l.qty, 0), ok: lines.length && !hasOut && !lack };
   },
   badge() {
-    document.querySelectorAll(".cart-count").forEach((b) => (b.textContent = Cart.count()));
+    const n = Cart.count();
+    document.querySelectorAll(".cart-count").forEach((b) => { b.textContent = n > 99 ? "99+" : n; b.hidden = !n; });
   },
   async open() {
     this.dialog().showModal();
@@ -905,3 +917,379 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 // Кошик змінився в іншій вкладці
 window.addEventListener("storage", (e) => { if (e.key === "cart") CartUI.badge(); });
+
+
+// =====================================================================
+// Шапка сайту: бургер-меню, логотип, каталог, пошук, обране, кабінет, кошик
+// =====================================================================
+
+// ---------- Коротке сповіщення внизу екрана ----------
+function toast(text) {
+  let t = document.getElementById("toast");
+  if (!t) {
+    t = document.createElement("div");
+    t.id = "toast";
+    t.className = "toast";
+    t.setAttribute("role", "status");
+    document.body.appendChild(t);
+  }
+  t.textContent = text;
+  t.classList.add("show");
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove("show"), 2400);
+}
+
+// ---------- Списки бажань ----------
+// Увійшли — списки зберігаються в акаунті (можна мати кілька). Гість — один список у браузері,
+// який після входу автоматично переноситься в «Мій список».
+const Wish = {
+  lists: [],          // для зареєстрованих: [{ id, name, is_default, items: [{ product_id }] }]
+  local: new Set(),   // для гостя
+  user: null,
+  ready: null,
+  readLocal() {
+    try { return new Set(JSON.parse(localStorage.getItem("wishlist") || "[]")); } catch (e) { return new Set(); }
+  },
+  saveLocal() {
+    try { localStorage.setItem("wishlist", JSON.stringify([...this.local])); } catch (e) {}
+  },
+  ids() {
+    return this.user ? new Set(this.lists.flatMap((l) => l.items.map((i) => i.product_id))) : this.local;
+  },
+  has(id) { return this.ids().has(Number(id)); },
+  count() { return this.ids().size; },
+  load() {
+    return (this.ready ||= (async () => {
+      this.local = this.readLocal();
+      this.user = await currentUser();
+      if (this.user) {
+        try {
+          if (this.local.size) { // перенести обране гостя в акаунт
+            this.lists = (await api("/api/wishlists/merge", { method: "POST", body: { product_ids: [...this.local] } })).lists;
+            this.local.clear();
+            this.saveLocal();
+          } else {
+            this.lists = (await api("/api/wishlists")).lists;
+          }
+        } catch (e) { this.lists = []; }
+      }
+      this.changed();
+    })());
+  },
+  changed() {
+    const ids = this.ids();
+    document.querySelectorAll("[data-wish]").forEach((b) => {
+      const on = ids.has(Number(b.dataset.wish));
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));
+      b.title = on ? "У списку бажань" : "Додати до списку бажань";
+    });
+    document.querySelectorAll(".wish-count").forEach((b) => { b.textContent = ids.size; b.hidden = !ids.size; });
+    document.dispatchEvent(new CustomEvent("wish:change"));
+  },
+  async toggle(id) {
+    id = Number(id);
+    await this.load();
+    const on = this.has(id);
+    try {
+      if (this.user) {
+        this.lists = (await api(`/api/wishlists/items/${id}`, { method: on ? "DELETE" : "PUT", body: {} })).lists;
+      } else {
+        on ? this.local.delete(id) : this.local.add(id);
+        this.saveLocal();
+      }
+      this.changed();
+      toast(on ? "Прибрано зі списку бажань" : "Додано до списку бажань ♥");
+    } catch (e) { toast(e.message); }
+  },
+  setLists(lists) { this.lists = lists; this.changed(); },
+};
+window.addEventListener("storage", (e) => { if (e.key === "wishlist" && !Wish.user) { Wish.local = Wish.readLocal(); Wish.changed(); } });
+function wishBtnHtml(id, cls = "") {
+  const on = Wish.ready && Wish.has(id);
+  return `<button type="button" class="wish-btn ${cls} ${on ? "on" : ""}" data-wish="${id}" aria-pressed="${on}"
+    title="${on ? "У списку бажань" : "Додати до списку бажань"}" aria-label="Список бажань">${icon("heart")}</button>`;
+}
+// Кліки по сердечках будь-де на сторінці
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-wish]");
+  if (!b) return;
+  e.preventDefault();
+  e.stopPropagation();
+  Wish.toggle(b.dataset.wish);
+});
+
+// ---------- Місто покупця ----------
+const City = {
+  get() {
+    try { return JSON.parse(localStorage.getItem("city") || "null"); } catch (e) { return null; }
+  },
+  label(c = this.get()) { return c?.city ? c.city : ""; },
+  async set(c) {
+    try { localStorage.setItem("city", JSON.stringify(c)); } catch (e) {}
+    const u = await currentUser();
+    if (u) { try { await api("/api/me/city", { method: "PUT", body: c }); } catch (e) {} }
+    document.querySelectorAll(".city-label").forEach((el) => (el.textContent = c.city || "Вказати місто"));
+    document.dispatchEvent(new CustomEvent("city:change", { detail: c }));
+  },
+};
+// Місто з профілю, якщо в браузері ще не збережено
+currentUser().then((u) => {
+  if (u?.city && !City.get()) {
+    try { localStorage.setItem("city", JSON.stringify({ city: u.city, region: u.region })); } catch (e) {}
+    document.querySelectorAll(".city-label").forEach((el) => (el.textContent = u.city));
+  }
+});
+
+const POPULAR_CITIES = ["Київ", "Харків", "Одеса", "Дніпро", "Запоріжжя", "Львів"];
+const CityModal = {
+  open() {
+    const d = this.dialog();
+    const inp = d.querySelector("input");
+    inp.value = City.get() ? placeLabel(City.get().city, City.get().region) : "";
+    d.querySelector(".error").textContent = "";
+    d.showModal();
+    setTimeout(() => inp.focus(), 50);
+  },
+  async choose(c) {
+    await City.set({ city: c.name, region: c.region || "" });
+    this._dlg.close();
+    toast(`Ваше місто: ${c.name}`);
+  },
+  dialog() {
+    if (this._dlg) return this._dlg;
+    const d = document.createElement("dialog");
+    d.className = "city-modal";
+    d.setAttribute("aria-labelledby", "cityTitle");
+    d.innerHTML = `
+      <div class="cm-head"><h2 id="cityTitle">Виберіть своє місто</h2>
+        <button class="close" type="button" data-close-city aria-label="Закрити">${icon("x")}</button></div>
+      <div class="city-body">
+        <p>Вкажіть ваш населений пункт, щоб одразу бачити відділення Нової Пошти та Укрпошти поруч із вами під час оформлення замовлення.</p>
+        <label>Населений пункт <input type="text" autocomplete="off" placeholder="Почніть вводити назву, напр. Вишневе"></label>
+        <p class="error"></p>
+        <div class="city-chips">${POPULAR_CITIES.map((c) => `<button type="button" class="sub-chip" data-city="${c}">${c}</button>`).join("")}</div>
+      </div>
+      <div class="city-foot"><button class="btn-outline" type="button" data-close-city>Закрити</button></div>`;
+    document.body.appendChild(d);
+    const inp = d.querySelector("input");
+    autocomplete(inp, { fetcher: (q) => searchPlaces(q), render: placeItemHtml, onSelect: (c) => this.choose(c) });
+    d.addEventListener("click", async (e) => {
+      if (e.target === d || e.target.closest("[data-close-city]")) return d.close();
+      const chip = e.target.closest("[data-city]");
+      if (!chip) return;
+      chip.disabled = true;
+      try {
+        const name = chip.dataset.city;
+        const found = (await searchPlaces(name)).find((c) => c.name === name) || { name, region: "" };
+        await this.choose(found);
+      } catch (err) { d.querySelector(".error").textContent = err.message; }
+      chip.disabled = false;
+    });
+    this._dlg = d;
+    return d;
+  },
+};
+
+// ---------- Поділитися лотом ----------
+async function shareLot({ title, url = location.href, anchor }) {
+  if (navigator.share && matchMedia("(pointer: coarse)").matches) { // телефони — системне меню «Поділитися»
+    try { await navigator.share({ title, url }); return; } catch (e) { if (e.name === "AbortError") return; }
+  }
+  document.querySelector(".share-pop")?.remove();
+  const u = encodeURIComponent(url), t = encodeURIComponent(title);
+  const pop = document.createElement("div");
+  pop.className = "share-pop";
+  pop.setAttribute("role", "menu");
+  pop.innerHTML = `
+    <button type="button" data-copy>${icon("link")} Копіювати посилання</button>
+    <a href="https://t.me/share/url?url=${u}&text=${t}" target="_blank" rel="noopener">${icon("send")} Telegram</a>
+    <a href="viber://forward?text=${encodeURIComponent(`${title} ${url}`)}">${icon("chat")} Viber</a>
+    <a href="https://www.facebook.com/sharer/sharer.php?u=${u}" target="_blank" rel="noopener">${icon("share")} Facebook</a>`;
+  anchor.after(pop);
+  const close = (e) => { if (!pop.contains(e.target) && e.target !== anchor) { pop.remove(); document.removeEventListener("click", close, true); } };
+  setTimeout(() => document.addEventListener("click", close, true));
+  pop.addEventListener("click", async (e) => {
+    if (e.target.closest("[data-copy]")) {
+      try { await navigator.clipboard.writeText(url); toast("Посилання скопійовано"); }
+      catch (err) { prompt("Скопіюйте посилання:", url); }
+    }
+    if (e.target.closest("a, button")) { pop.remove(); document.removeEventListener("click", close, true); }
+  });
+}
+
+// ---------- Бокове меню ----------
+const Drawer = {
+  open() {
+    const d = this.dialog();
+    this.fill();
+    d.showModal();
+    requestAnimationFrame(() => d.classList.add("open"));
+  },
+  close() {
+    const d = this._dlg;
+    if (!d?.open) return;
+    d.classList.remove("open");
+    setTimeout(() => d.close(), 220);
+  },
+  async fill() {
+    const d = this._dlg;
+    const u = await currentUser();
+    d.querySelector(".dr-user").innerHTML = u
+      ? `<a href="/account" class="dr-account">${icon("user")}<span><b>${esc(u.name)}</b><small>${esc(u.email)}</small></span></a>`
+      : `<p class="hint" style="margin:0 0 10px">Увійдіть, щоб бачити історію замовлень і зберігати списки бажань.</p>
+         <div class="dr-auth"><a class="btn-green" href="/login">Увійти</a><a class="btn-outline" href="/register">Реєстрація</a></div>`;
+    d.querySelector(".city-label").textContent = City.label() || "Вказати місто";
+    d.querySelectorAll(".dr-nav a").forEach((a) => a.classList.toggle("active", a.pathname === location.pathname));
+    // Категорії каталогу — для швидкого переходу
+    try {
+      await CartUI.load();
+      const tops = (CartUI.categories || []).filter((c) => !c.parent_id);
+      d.querySelector(".dr-cats").innerHTML = tops.map((c) => `<a href="/catalog?cat=${c.id}">${esc(c.name)}</a>`).join("");
+    } catch (e) {}
+  },
+  dialog() {
+    if (this._dlg) return this._dlg;
+    const d = document.createElement("dialog");
+    d.className = "side-drawer";
+    d.setAttribute("aria-label", "Меню");
+    d.innerHTML = `
+      <div class="dr-head">
+        <a href="/" class="logo"><img src="/img/logo.svg" alt="" class="logo-icon">Ягідник</a>
+        <button class="close" type="button" data-close-drawer aria-label="Закрити меню" autofocus>${icon("x")}</button>
+      </div>
+      <div class="dr-body">
+        <div class="dr-user"></div>
+        <button type="button" class="dr-city" data-open-city>${icon("pin")}<span><small>Ваше місто</small><b class="city-label"></b></span>${icon("arrowRight", "dr-chev")}</button>
+        <nav class="dr-nav" aria-label="Меню">
+          <a href="/">${icon("store")} Головна</a>
+          <a href="/catalog">${icon("grid")} Каталог</a>
+          <div class="dr-cats"></div>
+          <a href="/wishlist">${icon("heart")} Списки бажань <span class="dr-count wish-count" hidden></span></a>
+          <button type="button" data-open-cart>${icon("cart")} Кошик <span class="dr-count cart-count" hidden></span></button>
+          <a href="/account">${icon("user")} Особистий кабінет</a>
+          <a href="/about">${icon("info")} Про нас</a>
+        </nav>
+        <button type="button" class="dr-theme">${icon("moon")} <span>Темна тема</span></button>
+      </div>`;
+    document.body.appendChild(d);
+    d.addEventListener("click", (e) => {
+      if (e.target === d || e.target.closest("[data-close-drawer]")) return this.close();
+      if (e.target.closest("[data-open-city]")) { this.close(); setTimeout(() => CityModal.open(), 230); return; }
+      if (e.target.closest("[data-open-cart]")) { this.close(); return; } // кошик відкриє загальний обробник
+      if (e.target.closest(".dr-theme")) { Theme.set(Theme.get() === "dark" ? "light" : "dark"); this.paintTheme(); }
+    });
+    d.addEventListener("cancel", (e) => { e.preventDefault(); this.close(); });
+    this._dlg = d;
+    this.paintTheme();
+    return d;
+  },
+  paintTheme() {
+    const b = this._dlg?.querySelector(".dr-theme");
+    if (!b) return;
+    const dark = Theme.get() === "dark";
+    b.innerHTML = `${icon(dark ? "sun" : "moon")} <span>${dark ? "Світла тема" : "Темна тема"}</span>`;
+  },
+};
+
+// ---------- Пошук у шапці ----------
+// Підказки з лотами під час введення; Enter — усі результати в каталозі.
+// На сторінці каталогу пошук фільтрує товари одразу, без переходу.
+function initHeaderSearch(form) {
+  const input = form.querySelector("input");
+  const box = form.querySelector(".hs-suggest");
+  let active = -1, results = [], timer;
+  const live = () => !!window.SITE_SEARCH_LIVE;
+
+  const hide = () => { box.hidden = true; active = -1; input.setAttribute("aria-expanded", "false"); };
+  function find(q) {
+    const s = q.toLowerCase(), code = s.replace(/\s+/g, "-");
+    const cat = (id) => (CartUI.categories || []).find((c) => c.id === id)?.name || "";
+    return (CartUI.products || []).filter((p) =>
+      p.name.toLowerCase().includes(s) || (p.sku || "").toLowerCase().includes(code) ||
+      (p.summary || "").toLowerCase().includes(s) || cat(p.category_id).toLowerCase().includes(s))
+      .sort((a, b) => (b.name.toLowerCase().startsWith(s)) - (a.name.toLowerCase().startsWith(s)) || b.in_stock - a.in_stock);
+  }
+  async function suggest() {
+    const q = input.value.trim();
+    if (live()) { document.dispatchEvent(new CustomEvent("site:search", { detail: q })); return; }
+    if (q.length < 2) return hide();
+    try { await CartUI.load(); } catch (e) { return; }
+    const all = find(q);
+    results = all.slice(0, 6);
+    box.innerHTML = results.length
+      ? results.map((p, i) => `
+          <a href="/product?id=${p.id}" class="hs-item" role="option" id="hs-${i}">
+            <span class="hs-img">${imgTag(p.images?.[0]?.url, p.name)}</span>
+            <span class="hs-name">${esc(p.name)}${p.in_stock ? "" : `<small>Немає в наявності</small>`}</span>
+            <b>${fmt(p.price)}</b>
+          </a>`).join("") +
+        `<a href="/catalog?q=${encodeURIComponent(q)}" class="hs-all">Усі результати (${all.length}) ${icon("arrowRight")}</a>`
+      : `<p class="hs-empty">За запитом «${esc(q)}» нічого не знайдено</p>`;
+    box.hidden = false;
+    active = -1;
+    input.setAttribute("aria-expanded", "true");
+  }
+  input.addEventListener("input", () => { clearTimeout(timer); timer = setTimeout(suggest, 140); });
+  input.addEventListener("focus", () => { CartUI.load().catch(() => {}); if (input.value.trim().length >= 2 && !live()) suggest(); });
+  input.addEventListener("keydown", (e) => {
+    const items = [...box.querySelectorAll(".hs-item")];
+    if (e.key === "Escape") return hide();
+    if (box.hidden || !items.length || !["ArrowDown", "ArrowUp"].includes(e.key)) return;
+    e.preventDefault();
+    active = (active + (e.key === "ArrowDown" ? 1 : -1) + items.length) % items.length;
+    items.forEach((el, i) => el.classList.toggle("on", i === active));
+    input.setAttribute("aria-activedescendant", items[active].id);
+  });
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const on = box.querySelector(".hs-item.on");
+    if (on && !box.hidden) { location.href = on.href; return; }
+    const q = input.value.trim();
+    if (live()) { document.dispatchEvent(new CustomEvent("site:search", { detail: q })); input.blur(); return; }
+    location.href = q ? `/catalog?q=${encodeURIComponent(q)}` : "/catalog";
+  });
+  document.addEventListener("click", (e) => { if (!form.contains(e.target)) hide(); });
+}
+
+// ---------- Розмітка шапки ----------
+function renderSiteHeader() {
+  const h = document.getElementById("siteHeader");
+  if (!h) return;
+  const q = location.pathname === "/catalog" ? new URLSearchParams(location.search).get("q") || "" : "";
+  h.innerHTML = `
+    <div class="container hdr">
+      <button class="hdr-btn hdr-burger" type="button" data-open-drawer aria-label="Відкрити меню">${icon("menu")}</button>
+      <a href="/" class="logo"><img src="/img/logo.svg" alt="" class="logo-icon"><span class="logo-text">Ягідник</span></a>
+      <a href="/catalog" class="hdr-catalog ${location.pathname === "/catalog" ? "active" : ""}">${icon("grid")}<span>Каталог</span></a>
+      <form class="hdr-search" role="search" action="/catalog">
+        <span class="hs-ic">${icon("search")}</span>
+        <input type="search" name="q" value="${esc(q)}" placeholder="Я шукаю…" autocomplete="off" aria-label="Пошук саджанців"
+               role="combobox" aria-expanded="false" aria-controls="hsSuggest" enterkeyhint="search">
+        <button type="submit" class="hs-go">Знайти</button>
+        <div class="hs-suggest" id="hsSuggest" role="listbox" hidden></div>
+      </form>
+      <div class="hdr-icons">
+        <button class="hdr-btn theme-btn" type="button"></button>
+        <a href="/wishlist" class="hdr-btn" aria-label="Списки бажань" title="Списки бажань">${icon("heart")}<span class="hdr-badge wish-count" hidden>0</span></a>
+        <a href="/login" class="hdr-btn hdr-account" aria-label="Увійти" title="Увійти">${icon("user")}</a>
+        <button class="hdr-btn hdr-cart" type="button" data-open-cart aria-label="Кошик" title="Кошик">${icon("cart")}<span class="hdr-badge cart-count" hidden>0</span></button>
+      </div>
+    </div>`;
+  const tb = h.querySelector(".theme-btn");
+  Theme.paint(tb);
+  tb.onclick = () => { Theme.set(Theme.get() === "dark" ? "light" : "dark"); Drawer.paintTheme(); };
+  initHeaderSearch(h.querySelector(".hdr-search"));
+  currentUser().then((u) => {
+    const a = h.querySelector(".hdr-account");
+    if (u) { a.href = "/account"; a.title = `Кабінет: ${u.name}`; a.setAttribute("aria-label", "Особистий кабінет"); a.classList.add("on"); }
+  });
+}
+document.addEventListener("click", (e) => {
+  if (e.target.closest("[data-open-drawer]")) Drawer.open();
+  if (e.target.closest("[data-open-city]") && !e.target.closest(".side-drawer")) CityModal.open();
+});
+
+renderSiteHeader();
+Wish.load();
+CartUI.badge();
