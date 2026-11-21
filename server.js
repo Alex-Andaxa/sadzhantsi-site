@@ -12,6 +12,7 @@ const payments = require("./payments");
 const PAYMENT_STATUSES = ["unpaid", "awaiting", "processing", "paid", "failed", "refunded"];
 const { sendCode, mailConfigured } = require("./mailer");
 const { sendCodeViber, viberConfigured, hasPhone, maskPhone } = require("./viber");
+const limits = require("./limits");
 
 const DELIVERY_METHODS = ["np", "up"];
 const ORDER_STATUSES = ["new", "confirmed", "shipped", "done", "cancelled"];
@@ -21,6 +22,30 @@ const app = express();
 // На хостингу сайт стоїть за веб-сервером (Caddy/nginx): беремо справжню IP-адресу та https із заголовків проксі
 if (process.env.TRUST_PROXY === "1" || process.env.NODE_ENV === "production") app.set("trust proxy", 1);
 app.disable("x-powered-by");
+
+// Захисні заголовки. CSP дозволяє скрипти, стилі й запити лише з нашого сайту
+// (форма оплати — ще на LiqPay), забороняє вбудовувати сайт у чужі сторінки.
+const CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self'",
+  "connect-src 'self'",
+  "form-action 'self' https://www.liqpay.ua https://liqpay.ua https://*.liqpay.ua",
+  "frame-ancestors 'self'",
+  "base-uri 'self'",
+  "object-src 'none'",
+].join("; ");
+app.use((req, res, next) => {
+  res.setHeader("Content-Security-Policy", CSP);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()");
+  res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  next();
+});
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || (process.env.NODE_ENV === "production" ? "127.0.0.1" : "0.0.0.0");
 const SESSION_DAYS = 30;
@@ -145,8 +170,12 @@ const newCode = () => String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
 
 // Код надсилається на email (обов'язково) і додатково у Viber, якщо відомий телефон.
 // Повертає { token, viber } — viber: маскований номер, якщо код пішов і туди.
-async function issueCode({ purpose, email, userId = null, payload = {}, phone = "" }) {
+const CODES_PER_IP_HOUR = 8;
+async function issueCode({ purpose, email, userId = null, payload = {}, phone = "", ip = "" }) {
   const now = Date.now();
+  if (ip && !limits.allowed(`code:${ip}`, CODES_PER_IP_HOUR, 3600_000)) {
+    throw new HttpError(429, `Забагато запитів коду з вашої мережі. Спробуйте через ${limits.retryMinutes(`code:${ip}`, 3600_000)} хв.`);
+  }
   db.prepare("DELETE FROM email_codes WHERE expires_at < ?").run(now - 3600_000);
   const recent = db.prepare("SELECT COUNT(*) AS n, MAX(sent_at) AS last FROM email_codes WHERE email = ? AND sent_at > ?")
     .get(email, now - 3600_000);
@@ -170,6 +199,7 @@ async function issueCode({ purpose, email, userId = null, payload = {}, phone = 
     db.prepare("DELETE FROM email_codes WHERE token = ?").run(token);
     throw new HttpError(502, "Не вдалося надіслати лист з кодом. Спробуйте пізніше.");
   }
+  if (ip) limits.record(`code:${ip}`);
   // Viber — у фоні: збій чи затримка TurboSMS не заважає підтвердженню через email
   let viber = null;
   if (hasPhone(phone) && (viberConfigured || process.env.NODE_ENV !== "production")) {
@@ -215,7 +245,7 @@ app.post("/api/auth/resend", async (req, res) => {
   const payload = JSON.parse(row.payload);
   const phone = row.purpose === "register" ? payload.phone
     : db.prepare("SELECT phone FROM users WHERE id = ?").get(row.user_id)?.phone;
-  const { token, viber } = await issueCode({ purpose: row.purpose, email: row.email, userId: row.user_id, payload, phone });
+  const { token, viber } = await issueCode({ purpose: row.purpose, email: row.email, userId: row.user_id, payload, phone, ip: req.ip });
   res.json({ pending: token, viber, dev: !mailConfigured });
 });
 
@@ -228,12 +258,12 @@ app.post("/api/auth/register", async (req, res) => {
   if (!name) throw new HttpError(400, "Вкажіть ім'я");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "Некоректний email");
   const phone = phoneInput(req.body.phone);
-  if (password.length < 6) throw new HttpError(400, "Пароль має містити щонайменше 6 символів");
+  if (password.length < 8) throw new HttpError(400, "Пароль має містити щонайменше 8 символів");
   if (db.prepare("SELECT 1 FROM users WHERE email = ?").get(email)) {
     throw new HttpError(409, "Користувач з таким email вже існує");
   }
   const { token, viber } = await issueCode({
-    purpose: "register", email, phone,
+    purpose: "register", email, phone, ip: req.ip,
     payload: { name, email, phone, password_hash: hashPassword(password) },
   });
   res.status(202).json({ pending: token, email, viber, dev: !mailConfigured });
@@ -254,10 +284,19 @@ app.post("/api/auth/register/verify", wrap((req, res) => {
 app.post("/api/auth/login", wrap((req, res) => {
   const email = str(req.body.email, 200).toLowerCase();
   const password = typeof req.body.password === "string" ? req.body.password : "";
+  // Захист від підбору пароля: 8 невдалих спроб на акаунт і 30 з однієї IP за 15 хвилин
+  const W = 15 * 60_000, kEmail = `login:${email}`, kIp = `login-ip:${req.ip}`;
+  if (!limits.allowed(kEmail, 8, W) || !limits.allowed(kIp, 30, W)) {
+    const mins = Math.max(limits.retryMinutes(kEmail, W), limits.retryMinutes(kIp, W));
+    throw new HttpError(429, `Забагато невдалих спроб входу. Спробуйте через ${mins} хв.`);
+  }
   const user = db.prepare("SELECT * FROM users WHERE email = ?").get(email);
   if (!user || !verifyPassword(password, user.password_hash)) {
+    limits.record(kEmail);
+    limits.record(kIp);
     throw new HttpError(401, "Невірний email або пароль");
   }
+  limits.reset(kEmail);
   db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(Date.now());
   createSession(res, user.id);
   res.json({ user: publicUser(user) });
@@ -286,11 +325,11 @@ app.put("/api/me/password", requireUser, async (req, res) => {
   if (!verifyPassword(String(current || ""), req.user.password_hash)) {
     throw new HttpError(400, "Поточний пароль невірний");
   }
-  if (typeof newPass !== "string" || newPass.length < 6) {
-    throw new HttpError(400, "Новий пароль має містити щонайменше 6 символів");
+  if (typeof newPass !== "string" || newPass.length < 8) {
+    throw new HttpError(400, "Новий пароль має містити щонайменше 8 символів");
   }
   const { token, viber } = await issueCode({
-    purpose: "password", email: req.user.email, userId: req.user.id, phone: req.user.phone,
+    purpose: "password", email: req.user.email, userId: req.user.id, phone: req.user.phone, ip: req.ip,
     payload: { password_hash: hashPassword(newPass) },
   });
   res.status(202).json({ pending: token, email: req.user.email, viber, dev: !mailConfigured });
@@ -483,6 +522,7 @@ app.get("/api/products/:id", wrap((req, res) => {
 
 // Відгук: створити або оновити свій (один на лот)
 app.post("/api/products/:id/reviews", requireUser, wrap((req, res) => {
+  if (!limits.take(`review:${req.user.id}`, 20, 3600_000)) throw new HttpError(429, "Забагато відгуків за годину. Спробуйте пізніше.");
   const id = toInt(req.params.id);
   if (!db.prepare("SELECT 1 FROM products WHERE id = ? AND is_active = 1").get(id)) {
     throw new HttpError(404, "Лот не знайдено");
@@ -536,6 +576,9 @@ app.get("/api/delivery/:carrier/:kind", async (req, res, next) => {
 
 // ---------- Замовлення ----------
 app.post("/api/orders", wrap((req, res) => {
+  if (!limits.take(`order:${req.ip}`, 10, 600_000)) {
+    throw new HttpError(429, "Забагато замовлень за короткий час. Зачекайте кілька хвилин або зателефонуйте нам.");
+  }
   const name = str(req.body.name, 100);
   const phone = phoneInput(req.body.phone, { required: true });
   const deliveryMethod = str(req.body.delivery, 10);
