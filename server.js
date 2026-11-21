@@ -11,6 +11,7 @@ const payments = require("./payments");
 
 const PAYMENT_STATUSES = ["unpaid", "awaiting", "processing", "paid", "failed", "refunded"];
 const { sendCode, mailConfigured } = require("./mailer");
+const { sendCodeViber, viberConfigured, hasPhone, maskPhone } = require("./viber");
 
 const DELIVERY_METHODS = ["np", "up"];
 const ORDER_STATUSES = ["new", "confirmed", "shipped", "done", "cancelled"];
@@ -100,7 +101,7 @@ function createSession(res, userId) {
 
 const publicUser = (u) => u && ({
   id: u.id, name: u.name, email: u.email, phone: u.phone, city: u.city, region: u.region,
-  is_admin: !!u.is_admin, created_at: u.created_at,
+  is_admin: !!u.is_admin, is_super: !!u.is_super, created_at: u.created_at,
 });
 
 // Поточний користувач із cookie
@@ -142,7 +143,9 @@ const MAX_CODES_PER_HOUR = 5;        // листів на одну адресу 
 const hashCode = (token, code) => crypto.createHash("sha256").update(`${token}:${code}`).digest("hex");
 const newCode = () => String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
 
-async function issueCode({ purpose, email, userId = null, payload = {} }) {
+// Код надсилається на email (обов'язково) і додатково у Viber, якщо відомий телефон.
+// Повертає { token, viber } — viber: маскований номер, якщо код пішов і туди.
+async function issueCode({ purpose, email, userId = null, payload = {}, phone = "" }) {
   const now = Date.now();
   db.prepare("DELETE FROM email_codes WHERE expires_at < ?").run(now - 3600_000);
   const recent = db.prepare("SELECT COUNT(*) AS n, MAX(sent_at) AS last FROM email_codes WHERE email = ? AND sent_at > ?")
@@ -167,7 +170,13 @@ async function issueCode({ purpose, email, userId = null, payload = {} }) {
     db.prepare("DELETE FROM email_codes WHERE token = ?").run(token);
     throw new HttpError(502, "Не вдалося надіслати лист з кодом. Спробуйте пізніше.");
   }
-  return token;
+  // Viber — у фоні: збій чи затримка TurboSMS не заважає підтвердженню через email
+  let viber = null;
+  if (hasPhone(phone) && (viberConfigured || process.env.NODE_ENV !== "production")) {
+    viber = maskPhone(phone);
+    sendCodeViber(phone, code, purpose).catch((e) => console.error("Помилка відправки коду у Viber:", e.message));
+  }
+  return { token, viber };
 }
 
 // Перевіряє код; повертає запис або кидає помилку. Після успіху запис видаляється.
@@ -203,8 +212,11 @@ app.post("/api/auth/resend", async (req, res) => {
     throw new HttpError(429, "Зачекайте хвилину перед повторною відправкою.");
   }
   // issueCode сам анулює попередній код цієї дії
-  const token = await issueCode({ purpose: row.purpose, email: row.email, userId: row.user_id, payload: JSON.parse(row.payload) });
-  res.json({ pending: token, dev: !mailConfigured });
+  const payload = JSON.parse(row.payload);
+  const phone = row.purpose === "register" ? payload.phone
+    : db.prepare("SELECT phone FROM users WHERE id = ?").get(row.user_id)?.phone;
+  const { token, viber } = await issueCode({ purpose: row.purpose, email: row.email, userId: row.user_id, payload, phone });
+  res.json({ pending: token, viber, dev: !mailConfigured });
 });
 
 // ---------- Авторизація ----------
@@ -220,11 +232,11 @@ app.post("/api/auth/register", async (req, res) => {
   if (db.prepare("SELECT 1 FROM users WHERE email = ?").get(email)) {
     throw new HttpError(409, "Користувач з таким email вже існує");
   }
-  const token = await issueCode({
-    purpose: "register", email,
+  const { token, viber } = await issueCode({
+    purpose: "register", email, phone,
     payload: { name, email, phone, password_hash: hashPassword(password) },
   });
-  res.status(202).json({ pending: token, email, dev: !mailConfigured });
+  res.status(202).json({ pending: token, email, viber, dev: !mailConfigured });
 });
 
 // Крок 2: код з листа → створюємо акаунт і входимо
@@ -277,11 +289,11 @@ app.put("/api/me/password", requireUser, async (req, res) => {
   if (typeof newPass !== "string" || newPass.length < 6) {
     throw new HttpError(400, "Новий пароль має містити щонайменше 6 символів");
   }
-  const token = await issueCode({
-    purpose: "password", email: req.user.email, userId: req.user.id,
+  const { token, viber } = await issueCode({
+    purpose: "password", email: req.user.email, userId: req.user.id, phone: req.user.phone,
     payload: { password_hash: hashPassword(newPass) },
   });
-  res.status(202).json({ pending: token, email: req.user.email, dev: !mailConfigured });
+  res.status(202).json({ pending: token, email: req.user.email, viber, dev: !mailConfigured });
 });
 
 // Крок 2: код з листа → застосовуємо новий пароль
@@ -1058,6 +1070,19 @@ admin.put("/settings", wrap((req, res) => {
   res.json(adminSettings());
 }));
 
+// Права адміністратора: будь-який адміністратор може надати або забрати їх в іншого акаунта.
+// Супер-адміністратора (власника) змінити не може ніхто; власні права теж не змінюються.
+admin.patch("/customers/:id/role", wrap((req, res) => {
+  if (typeof req.body.is_admin !== "boolean") throw new HttpError(400, "Вкажіть is_admin: true або false");
+  const u = db.prepare("SELECT id, name, email, is_admin, is_super FROM users WHERE id = ?").get(toInt(req.params.id));
+  if (!u) throw new HttpError(404, "Акаунт не знайдено");
+  if (u.is_super) throw new HttpError(403, "Права супер-адміністратора не може змінити жоден адміністратор");
+  if (u.id === req.user.id) throw new HttpError(400, "Власні права змінити не можна");
+  db.prepare("UPDATE users SET is_admin = ? WHERE id = ?").run(req.body.is_admin ? 1 : 0, u.id);
+  console.log(`[права] ${req.user.email} ${req.body.is_admin ? "надав" : "забрав"} права адміністратора: ${u.email}`);
+  res.json({ ok: true, is_admin: req.body.is_admin });
+}));
+
 // Замовлення (усі покупці, зокрема гості)
 admin.get("/orders", wrap((req, res) => {
   const where = ["1 = 1"];
@@ -1122,7 +1147,7 @@ admin.get("/customers", wrap((req, res) => {
   const q = str(req.query.q, 100);
   const like = `%${q}%`;
   const customers = db.prepare(`
-    SELECT u.id, u.name, u.email, u.phone, u.city, u.region, u.is_admin, u.created_at,
+    SELECT u.id, u.name, u.email, u.phone, u.city, u.region, u.is_admin, u.is_super, u.created_at,
            COUNT(o.id) AS orders_count,
            COALESCE(SUM(CASE WHEN o.status <> 'cancelled' THEN o.total END), 0) AS spent,
            MAX(o.created_at) AS last_order_at

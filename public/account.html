@@ -133,7 +133,7 @@
     pwPending = data.pending;
     $("passwordForm").hidden = true;
     $("pwCodeForm").hidden = false;
-    $("pwCodeNote").innerHTML = `Для підтвердження ми надіслали 6-значний код на <b>${esc(me.email)}</b>. Код дійсний 10 хвилин.` +
+    $("pwCodeNote").innerHTML = `Для підтвердження ми надіслали 6-значний код на <b>${esc(me.email)}</b>${data.viber ? ` і у Viber на номер <b>${esc(data.viber)}</b>` : ""}. Код дійсний 10 хвилин.` +
       (data.dev ? `<br><small>Режим розробки: пошту не налаштовано, код виведено в консоль сервера.</small>` : "");
     $("pwCodeForm").code.value = "";
     $("pwCodeForm").code.focus();

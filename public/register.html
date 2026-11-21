@@ -65,7 +65,7 @@
     email = data.email || email;
     $("step1").hidden = true;
     $("step2").hidden = false;
-    $("codeNote").innerHTML = `Ми надіслали 6-значний код на <b>${esc(email)}</b>. Введіть його нижче — код дійсний 10 хвилин.` +
+    $("codeNote").innerHTML = `Ми надіслали 6-значний код на <b>${esc(email)}</b>${data.viber ? ` і у Viber на номер <b>${esc(data.viber)}</b>` : ""}. Введіть його нижче — код дійсний 10 хвилин.` +
       (data.dev ? `<br><small>Режим розробки: пошту не налаштовано, код виведено в консоль сервера.</small>` : "");
     $("codeForm").code.value = "";
     $("codeForm").code.focus();
