@@ -58,7 +58,29 @@ const smallJson = express.json({ limit: "100kb" });
 const PAYMENT_WEBHOOK = "/api/payments/mono/webhook";
 app.use((req, res, next) => (req.path.startsWith("/api/admin") || req.path === PAYMENT_WEBHOOK ? next() : smallJson(req, res, next)));
 
-app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
+// Сторінки: до адрес спільних скриптів і стилів додаємо версію (?v=хеш вмісту).
+// Після кожного оновлення сайту браузери й Cloudflare завантажують нові файли, а не беруть старі з кешу.
+const PUBLIC_DIR = path.join(__dirname, "public");
+const VERSIONED = ["common.js", "styles.css", "theme.js"];
+const ASSET_VER = crypto.createHash("sha256")
+  .update(VERSIONED.map((f) => fs.readFileSync(path.join(PUBLIC_DIR, f))).join("\n")).digest("hex").slice(0, 10);
+const htmlCache = new Map();
+app.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  let name = req.path === "/" ? "index" : req.path.slice(1).replace(/\.html$/, "");
+  if (!/^[a-z0-9_-]+$/i.test(name)) return next();
+  let html = htmlCache.get(name);
+  if (html === undefined) {
+    const file = path.join(PUBLIC_DIR, `${name}.html`);
+    if (!fs.existsSync(file)) return next();
+    html = fs.readFileSync(file, "utf8")
+      .replace(/(src|href)="\/(common\.js|styles\.css|theme\.js)"/g, `$1="/$2?v=${ASSET_VER}"`);
+    htmlCache.set(name, html);
+  }
+  res.set("Cache-Control", "no-cache");
+  res.type("html").send(html);
+});
+app.use(express.static(PUBLIC_DIR, { extensions: ["html"] }));
 app.use("/uploads", express.static(UPLOADS_DIR, {
   maxAge: "30d",
   immutable: true,
