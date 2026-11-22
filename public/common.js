@@ -414,6 +414,22 @@ function footerContactsHtml(c = {}) {
   </div>`;
 }
 
+// Реквізити продавця й контакти на сторінках з правилами (оферта тощо).
+// Незаповнене в налаштуваннях показується жовтою позначкою — щоб було видно, що треба вписати.
+function fillSellerData() {
+  siteInfo().then(({ contacts = {}, seller = {} }) => {
+    const put = (el, v) => {
+      el.innerHTML = v ? esc(v) : `<mark class="fill">${esc(el.dataset.hint || "заповніть в адмінці")}</mark>`;
+    };
+    document.querySelectorAll("[data-seller]").forEach((el) => put(el, seller[el.dataset.seller]));
+    document.querySelectorAll("[data-contact]").forEach((el) => put(el, contacts[el.dataset.contact]));
+  });
+  const note = document.getElementById("minOrderNote");
+  if (note) api("/api/settings").then(({ min_order }) => {
+    if (min_order > 0) { note.hidden = false; note.innerHTML = `Мінімальна сума замовлення — <b>${fmt(min_order)}</b>.`; }
+  }).catch(() => {});
+}
+
 // Список контактів («Про нас»); порожні поля пропускаються
 function contactItems(c = {}) {
   const tel = (v) => "+" + String(v).replace(/\D/g, "");
@@ -441,13 +457,16 @@ document.addEventListener("DOMContentLoaded", () => {
   const footer = document.getElementById("siteFooter");
   if (footer) {
     const year = new Date().getFullYear();
-    const paint = (c) => {
-      const items = contactItems(c);
+    const paint = (c = {}, sl = {}) => {
+      const sellerLine = [sl.name, sl.code && `РНОКПП/ЄДРПОУ ${sl.code}`, sl.address].filter(Boolean).map(esc).join(" · ");
       footer.innerHTML = `
         <div class="container footer-grid">
           <div>
             <a href="/" class="logo"><img src="/img/logo.svg" alt="" class="logo-icon">Ягідник</a>
             <p class="hint">Саджанці фруктових, ягідних і декоративних рослин з доставкою по Україні.</p>
+            <div class="pay-logos" aria-label="Приймаємо до оплати">
+              <img class="pl-light" src="/img/pay/visa-light.svg" alt="Visa"><img class="pl-dark" src="/img/pay/visa-dark.svg" alt="" aria-hidden="true"><img class="pl-light" src="/img/pay/mastercard-light.svg" alt="Mastercard"><img class="pl-dark" src="/img/pay/mastercard-dark.svg" alt="" aria-hidden="true"><img class="pl-light" src="/img/pay/apple-pay-light.svg" alt="Apple Pay"><img class="pl-dark" src="/img/pay/apple-pay-dark.svg" alt="" aria-hidden="true"><img class="pl-light" src="/img/pay/google-pay-light.svg" alt="Google Pay"><img class="pl-dark" src="/img/pay/google-pay-dark.svg" alt="" aria-hidden="true">
+            </div>
           </div>
           <nav class="footer-links" aria-label="Розділи">
             <b>Покупцям</b>
@@ -456,15 +475,22 @@ document.addEventListener("DOMContentLoaded", () => {
             <a href="/wishlist">Списки бажань</a>
             <a href="/account">Особистий кабінет</a>
           </nav>
+          <nav class="footer-links" aria-label="Інформація">
+            <b>Інформація</b>
+            <a href="/delivery">Доставка і оплата</a>
+            <a href="/returns">Повернення та обмін</a>
+            <a href="/offer">Публічна оферта</a>
+            <a href="/privacy">Політика конфіденційності</a>
+          </nav>
           <div>
             <b>Контакти</b>
             ${footerContactsHtml(c)}
           </div>
         </div>
-        <div class="footer-copy">© ${year} Ягідник. Усі права захищено.</div>`;
+        <div class="footer-copy">© ${year} Ягідник. Усі права захищено.${sellerLine ? `<br><span class="seller-line">${sellerLine}</span>` : ""}</div>`;
     };
-    paint({});
-    siteInfo().then((s) => paint(s.contacts));
+    paint();
+    siteInfo().then((s) => paint(s.contacts, s.seller));
   }
 });
 
@@ -768,19 +794,9 @@ const PAY_STATUS = {
   unpaid: "Оплата при отриманні", awaiting: "Очікує оплати", processing: "Оплата обробляється",
   paid: "Оплачено", failed: "Оплата не пройшла", refunded: "Кошти повернено",
 };
-// Перехід на захищену сторінку оплати LiqPay (форма POST з data і signature)
+// Перехід на захищену сторінку оплати monobank (plata by mono)
 function goToPayment(p) {
-  const f = document.createElement("form");
-  f.method = "POST";
-  f.action = p.action;
-  f.acceptCharset = "utf-8";
-  for (const k of ["data", "signature"]) {
-    const i = document.createElement("input");
-    i.type = "hidden"; i.name = k; i.value = p[k];
-    f.appendChild(i);
-  }
-  document.body.appendChild(f);
-  f.submit();
+  if (p?.url) location.href = p.url;
 }
 
 // ---------- Кошик у вікні по центру екрана ----------

@@ -53,9 +53,8 @@
     const opts = [];
     if (cfg.payment.online) opts.push(`
       <label class="pay-opt"><input type="radio" name="payment_method" value="online">
-        <span><b class="with-ic">${icon("card")} Онлайн-оплата карткою будь-якого банку</b>
-        <small>Visa або Mastercard від будь-якого українського банку (monobank, ПриватБанк, Ощадбанк, ПУМБ, А-Банк, Райффайзен…),
-        а також Apple Pay, Google Pay і Приват24. Через захищену сторінку LiqPay.
+        <span><b class="with-ic">${icon("card")} Оплата карткою онлайн</b>
+        <small>Карткою будь-якого банку, Apple Pay або Google Pay — на захищеній сторінці оплати.
         ${cfg.sandbox ? "<br><b>Тестовий режим:</b> гроші не списуються." : ""}</small></span></label>`);
     if (cfg.payment.iban) opts.push(`
       <label class="pay-opt"><input type="radio" name="payment_method" value="iban">
@@ -108,8 +107,10 @@
           <div class="summary-row summary-total"><span>До сплати</span><b id="sumTotal"></b></div>
           <p class="min-note" id="sumWarn" hidden style="margin:12px 0 0"></p>
           <p class="error" id="coError"></p>
+          <label class="check agree"><input type="checkbox" id="coAgree">
+            <span>Я погоджуюсь з умовами <a href="/offer" target="_blank">публічної оферти</a>,
+            <a href="/delivery" target="_blank">доставки й оплати</a> та <a href="/privacy" target="_blank">політикою конфіденційності</a></span></label>
           <button class="btn" type="submit" form="coForm" id="submitBtn">Замовлення підтверджую</button>
-          <p class="hint" style="font-size:.82rem;margin:10px 0 0">Підтверджуючи замовлення, ви погоджуєтесь з умовами доставки та оплати.</p>
         </aside>
       </div>`;
 
@@ -135,6 +136,7 @@
       if (!picker) throw new Error("Зачекайте, завантажується список відділень");
       var dlv = picker.value();
       if (!data.payment_method) throw new Error("Оберіть спосіб оплати");
+      if (!$("coAgree").checked) throw new Error("Підтвердіть згоду з умовами публічної оферти та політикою конфіденційності");
     } catch (e2) { err.textContent = e2.message; return; }
 
     const btn = $("submitBtn");
@@ -144,7 +146,7 @@
       const s = CartUI.summary();
       const order = await api("/api/orders", {
         method: "POST",
-        body: { ...data, ...dlv, items: s.lines.map(({ p, qty }) => ({ id: p.id, qty })) },
+        body: { ...data, ...dlv, agree: true, items: s.lines.map(({ p, qty }) => ({ id: p.id, qty })) },
       });
       Cart.set({});
       CartUI.badge();

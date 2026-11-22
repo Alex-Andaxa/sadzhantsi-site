@@ -118,9 +118,10 @@ if (addColumn("products", "summary", "TEXT NOT NULL DEFAULT ''")) {
 addColumn("orders", "payment_method", "TEXT NOT NULL DEFAULT 'cod'");    // cod (післяплата) | online
 addColumn("orders", "payment_status", "TEXT NOT NULL DEFAULT 'unpaid'"); // unpaid | awaiting | processing | paid | failed | refunded
 addColumn("orders", "paid_at", "TEXT");
-addColumn("orders", "pay_order_id", "TEXT NOT NULL DEFAULT ''");         // ідентифікатор спроби оплати в LiqPay
+addColumn("orders", "pay_order_id", "TEXT NOT NULL DEFAULT ''");         // ідентифікатор спроби оплати (invoiceId рахунку monobank)
 addColumn("orders", "payment_info", "TEXT NOT NULL DEFAULT ''");         // коротко: картка, причина відмови тощо
-addColumn("orders", "access_token", "TEXT NOT NULL DEFAULT ''");         // доступ до статусу замовлення для гостя
+addColumn("orders", "access_token", "TEXT NOT NULL DEFAULT ''");
+addColumn("orders", "pay_event_at", "TEXT NOT NULL DEFAULT ''");          // час останньої події оплати (порядок вебхуків)         // доступ до статусу замовлення для гостя
 db.exec(`
   CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 

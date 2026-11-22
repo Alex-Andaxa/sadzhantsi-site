@@ -98,8 +98,8 @@
         <p class="hint" style="margin:0">Покупець не зможе оформити замовлення на меншу суму. 0 — без обмеження.</p>
         <p class="field-title">Способи оплати</p>
         <label class="check"><input type="checkbox" name="pay_cod"> <i data-ic="cash"></i> Накладений платіж</label>
-        <label class="check"><input type="checkbox" name="pay_online"> <i data-ic="card"></i> Онлайн-оплата карткою (LiqPay)</label>
-        <p class="hint" id="liqpayState" style="margin:0"></p>
+        <label class="check"><input type="checkbox" name="pay_online"> <i data-ic="card"></i> Онлайн-оплата карткою (monobank)</label>
+        <p class="hint" id="onlineState" style="margin:0"></p>
         <label class="check"><input type="checkbox" name="pay_iban"> <i data-ic="bank"></i> Оплата за реквізитами (IBAN)</label>
       </fieldset>
       <fieldset class="settings-col">
@@ -121,6 +121,13 @@
           <input name="c_viber" maxlength="40" placeholder="Viber: номер" aria-label="Viber">
         </div>
         <p class="hint" style="margin:0">Показуються на сторінці «Про нас» і внизу сайту. Порожні не показуються.</p>
+      </fieldset>
+      <fieldset class="settings-col">
+        <legend>Реквізити продавця</legend>
+        <input name="s_name" maxlength="150" placeholder="ФОП Прізвище Ім'я По батькові (або назва ТОВ)" aria-label="Продавець">
+        <input name="s_code" maxlength="10" inputmode="numeric" placeholder="РНОКПП (10 цифр) або ЄДРПОУ (8 цифр)" aria-label="Код продавця">
+        <input name="s_address" maxlength="250" placeholder="Адреса реєстрації / фактична адреса" aria-label="Адреса продавця">
+        <p class="hint" style="margin:0">Показуються у футері, в оферті та політиці конфіденційності. Обов'язкові для підключення еквайрингу monobank.</p>
       </fieldset>
       <div class="settings-actions">
         <p class="error" id="settingsMsg"></p>
@@ -414,18 +421,20 @@
     f.min_order.value = s.min_order;
     f.pay_cod.checked = s.pay_cod;
     f.pay_online.checked = s.pay_online;
-    f.pay_online.disabled = !s.liqpay_configured;
+    f.pay_online.disabled = !s.online_configured;
     f.pay_iban.checked = s.pay_iban;
     f.iban_recipient.value = s.iban_recipient;
     f.iban_number.value = s.iban_number;
     f.iban_code.value = s.iban_code;
     f.iban_bank.value = s.iban_bank;
+    const sl = s.seller || {};
+    f.s_name.value = sl.name || ""; f.s_code.value = sl.code || ""; f.s_address.value = sl.address || "";
     const c = s.contacts || {};
     f.c_phone.value = c.phone || ""; f.c_email.value = c.email || ""; f.c_address.value = c.address || "";
     f.c_hours.value = c.hours || ""; f.c_telegram.value = c.telegram ? "@" + c.telegram : ""; f.c_viber.value = c.viber || "";
-    $("liqpayState").innerHTML = s.liqpay_configured
-      ? (s.liqpay_sandbox ? "LiqPay підключено у <b>тестовому режимі</b> — гроші не списуються." : "LiqPay підключено ✓")
-      : "Онлайн-оплата недоступна: не задано ключі LiqPay (LIQPAY_PUBLIC_KEY / LIQPAY_PRIVATE_KEY у файлі .env).";
+    $("onlineState").innerHTML = s.online_configured
+      ? (s.online_sandbox ? "monobank підключено у <b>тестовому режимі</b> — гроші не списуються." : "Оплата карткою через monobank підключена ✓")
+      : "Онлайн-оплата недоступна: не задано токен monobank (MONO_TOKEN у файлі .env).";
   }
   async function loadSettings() {
     fillSettings(await api("/api/admin/settings"));
@@ -443,6 +452,7 @@
           min_order: Number(f.min_order.value), pay_cod: f.pay_cod.checked, pay_online: f.pay_online.checked,
           pay_iban: f.pay_iban.checked, iban_recipient: f.iban_recipient.value, iban_number: f.iban_number.value,
           iban_code: f.iban_code.value, iban_bank: f.iban_bank.value,
+          seller: { name: f.s_name.value, code: f.s_code.value, address: f.s_address.value },
           contacts: {
             phone: f.c_phone.value, email: f.c_email.value, address: f.c_address.value,
             hours: f.c_hours.value, telegram: f.c_telegram.value, viber: f.c_viber.value,
@@ -688,6 +698,8 @@
           </label>
           <span class="saved" data-saved></span>
         </div>
+        ${o.payment_method === "online" && o.payment_status === "paid" && o.pay_order_id
+          ? `<p style="margin:10px 0 0"><button class="btn-sm danger" type="button" data-refund="${o.id}" data-sum="${o.total}">${icon("undo")} Повернути кошти покупцю (${fmt(o.total)})</button></p>` : ""}
       </div>`).join("");
   }
 
@@ -698,6 +710,19 @@
     clearTimeout(el._t);
     el._t = setTimeout(() => (el.textContent = ""), 2000);
   }
+
+  // Повернення коштів за онлайн-оплату через monobank
+  $("ordersList").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-refund]");
+    if (!b) return;
+    if (!confirm(`Повернути покупцю ${fmt(Number(b.dataset.sum))} за замовлення №${b.dataset.refund}?\n\nГроші повернуться на картку, з якої платили. Скасувати повернення неможливо.`)) return;
+    b.disabled = true;
+    try {
+      const r = await api(`/api/admin/orders/${b.dataset.refund}/refund`, { method: "POST", body: {} });
+      toast(r.status === "success" ? "Кошти повернено" : r.status === "failure" ? "monobank відхилив повернення" : "Повернення в обробці — статус оновиться автоматично");
+      loadOrders();
+    } catch (err) { alert(err.message); b.disabled = false; }
+  });
 
   $("ordersList").addEventListener("change", async (e) => {
     const orderEl = e.target.closest("[data-order]");

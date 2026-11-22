@@ -10,7 +10,7 @@
 | VPS: Ubuntu 26.04 або 24.04 LTS, **2 ГБ RAM**, 20+ ГБ диска | Hetzner, DigitalOcean, Contabo або українські: Hostiq, ukraine.com.ua, De Novo | ~5–10 $/міс |
 | Домен (`.com.ua`, `.ua`, `.com`) | nic.ua, Hostiq, imena.ua | від ~5 $/рік |
 | Пошта для кодів підтвердження | Gmail з паролем застосунку (див. нижче) | безкоштовно |
-| Ключі LiqPay (для оплати карткою) | liqpay.ua (потрібен ФОП/ТОВ) | % з платежу |
+| Еквайринг monobank — Plata by mono (оплата карткою) | web.monobank.ua (потрібен ФОП/ТОВ) | % з платежу |
 
 2 ГБ RAM потрібні через синхронізацію відділень Укрпошти (на кілька секунд ~450 МБ).
 
@@ -127,10 +127,9 @@ SMTP_USER=ваша@gmail.com
 SMTP_PASS=xxxxxxxxxxxxxxxx
 SMTP_FROM="Ягідник <ваша@gmail.com>"
 
-# LiqPay (коли будуть ключі). Спершу тестові ключі й LIQPAY_SANDBOX=1, потім бойові й 0
-LIQPAY_PUBLIC_KEY=
-LIQPAY_PRIVATE_KEY=
-LIQPAY_SANDBOX=1
+# Еквайринг monobank. Спершу тестовий токен з api.monobank.ua і MONO_TEST=1, потім бойовий з web.monobank.ua і MONO_TEST=0
+MONO_TOKEN=
+MONO_TEST=1
 ```
 
 Збережіть (Ctrl+O, Enter, Ctrl+X). Якщо база нова — створіть адміністратора:
@@ -159,7 +158,7 @@ cp /home/shop/sadzhantsi-site/deploy/Caddyfile.ip /etc/caddy/Caddyfile
 systemctl reload caddy
 ```
 
-Сайт відкривається за `http://IP_СЕРВЕРА`. `SITE_URL` у `.env` поки залиште порожнім. Онлайн-оплату LiqPay вмикайте лише з доменом і HTTPS.
+Сайт відкривається за `http://IP_СЕРВЕРА`. `SITE_URL` у `.env` поки залиште порожнім. Онлайн-оплату monobank вмикайте лише з доменом і HTTPS.
 
 **З доменом:**
 
@@ -263,9 +262,9 @@ scp -r root@IP_СЕРВЕРА:/home/shop/sadzhantsi-site/data .\backup-data
 - [ ] Реєстрація: лист із кодом приходить на пошту
 - [ ] Адмінка: Каталог → «Довідник відділень Укрпошти» показує успішну синхронізацію
 - [ ] Тестове замовлення з Новою Поштою та Укрпоштою
-- [ ] LiqPay у тестовому режимі: оплата проходить, статус «Оплачено» з'являється в адмінці
-- [ ] У `.env` вказано правильний `SITE_URL` — за ним LiqPay повідомляє сайт про оплату (окремо в кабінеті LiqPay налаштовувати нічого не треба)
-- [ ] Після перевірок: бойові ключі LiqPay і `LIQPAY_SANDBOX=0`, `systemctl restart sadzhantsi`
+- [ ] monobank у тестовому режимі: оплата проходить, статус «Оплачено» з'являється в адмінці
+- [ ] У `.env` вказано правильний `SITE_URL` — на нього monobank надсилає вебхук про оплату (у кабінеті налаштовувати нічого не треба)
+- [ ] Після перевірок: бойовий `MONO_TOKEN` і `MONO_TEST=0`, `systemctl restart sadzhantsi`
 
 ## Корисні команди
 

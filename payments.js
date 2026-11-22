@@ -1,73 +1,106 @@
-// Онлайн-оплата через LiqPay (ПриватБанк): картки Visa/Mastercard, Apple Pay, Google Pay, Приват24.
-// Документація: https://www.liqpay.ua/doc
-// Потрібні ключі з кабінету https://www.liqpay.ua → Налаштування магазину → API.
+// Онлайн-оплата через інтернет-еквайринг monobank («Plata by mono»):
+// картки Visa/Mastercard будь-якого банку, Apple Pay, Google Pay, оплата в застосунку monobank.
+// Документація: https://monobank.ua/api-docs/acquiring
+//
+// Налаштування в .env:
+//   MONO_TOKEN=     токен з кабінету https://web.monobank.ua/ (бойовий)
+//                   або тестовий токен з https://api.monobank.ua/ (гроші не списуються)
+//   MONO_TEST=1     позначка «тестовий режим» на сайті (лише для тестового токена)
 const crypto = require("node:crypto");
 
-const PUBLIC_KEY = process.env.LIQPAY_PUBLIC_KEY || "";
-const PRIVATE_KEY = process.env.LIQPAY_PRIVATE_KEY || "";
-const SANDBOX = process.env.LIQPAY_SANDBOX === "1";
-const CHECKOUT_URL = "https://www.liqpay.ua/api/3/checkout";
-const API_URL = "https://www.liqpay.ua/api/request";
+const TOKEN = process.env.MONO_TOKEN || "";
+const API = (process.env.MONO_API_BASE || "https://api.monobank.ua").replace(/\/$/, "");
+const SANDBOX = process.env.MONO_TEST === "1";
 
-const configured = () => !!(PUBLIC_KEY && PRIVATE_KEY);
+const configured = () => !!TOKEN;
 
-// Підпис LiqPay: base64(sha1(private_key + data + private_key))
-const sign = (data) => crypto.createHash("sha1").update(PRIVATE_KEY + data + PRIVATE_KEY).digest("base64");
-const encode = (params) => Buffer.from(JSON.stringify(params)).toString("base64");
-
-function verify(data, signature) {
-  if (!configured() || typeof data !== "string" || typeof signature !== "string") return null;
-  const expected = Buffer.from(sign(data));
-  const given = Buffer.from(signature);
-  if (expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) return null;
-  try { return JSON.parse(Buffer.from(data, "base64").toString("utf8")); } catch { return null; }
+async function call(path, { method = "GET", body } = {}) {
+  const res = await fetch(API + path, {
+    method,
+    headers: { "X-Token": TOKEN, ...(body ? { "Content-Type": "application/json" } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+    signal: AbortSignal.timeout(15000),
+  });
+  const text = await res.text();
+  let data = {};
+  try { data = text ? JSON.parse(text) : {}; } catch { /* не JSON */ }
+  if (!res.ok) throw new Error(`monobank ${res.status}: ${data.errText || data.errorDescription || data.errCode || text.slice(0, 200)}`);
+  return data;
 }
 
 /*
-  Дані для переходу на сторінку оплати LiqPay. Браузер відправляє форму POST на action з полями data і signature.
-  payOrderId — унікальний для кожної спроби (замовлення можна оплатити повторно після відмови).
+  Рахунок на оплату. amount — у гривнях (ціле число), monobank приймає копійки.
+  reference — наш ідентифікатор спроби оплати (ZS<номер замовлення>-<спроба>), повертається у вебхуку.
+  Повертає { invoiceId, pageUrl } — покупця треба перенаправити на pageUrl.
 */
-function checkout({ payOrderId, amount, description, resultUrl, serverUrl }) {
-  const params = {
-    version: 3,
-    public_key: PUBLIC_KEY,
-    action: "pay",
-    amount: Number(amount).toFixed(2),
-    currency: "UAH",
-    description,
-    order_id: payOrderId,
-    language: "uk",
-    result_url: resultUrl,
-    server_url: serverUrl,
-  };
-  if (SANDBOX) params.sandbox = 1;
-  const data = encode(params);
-  return { action: CHECKOUT_URL, data, signature: sign(data) };
-}
-
-// Запит статусу платежу напряму в LiqPay (працює навіть тоді, коли сервер недоступний для callback, напр. localhost)
-async function fetchStatus(payOrderId) {
-  const data = encode({ version: 3, public_key: PUBLIC_KEY, action: "status", order_id: payOrderId });
-  const res = await fetch(API_URL, {
+async function createInvoice({ amount, reference, destination, redirectUrl, webHookUrl }) {
+  const d = await call("/api/merchant/invoice/create", {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ data, signature: sign(data) }),
-    signal: AbortSignal.timeout(15000),
+    body: {
+      amount: Math.round(Number(amount) * 100),
+      ccy: 980,
+      merchantPaymInfo: { reference, destination },
+      redirectUrl,
+      webHookUrl,
+      validity: 24 * 3600,
+    },
   });
-  if (!res.ok) throw new Error(`LiqPay HTTP ${res.status}`);
-  return res.json();
+  if (!d.invoiceId || !d.pageUrl) throw new Error("monobank: у відповіді немає посилання на оплату");
+  return { invoiceId: d.invoiceId, pageUrl: d.pageUrl };
 }
 
-// Статус LiqPay → наш статус оплати
-function mapStatus(s) {
-  if (s === "success" || (SANDBOX && s === "sandbox")) return "paid";
-  if (s === "failure" || s === "error") return "failed";
-  if (s === "reversed") return "refunded";
-  if (["processing", "prepared", "wait_secure", "wait_accept", "wait_lc", "hold_wait", "3ds_verify",
-       "otp_verify", "cvv_verify", "sender_verify", "receiver_verify", "wait_compensation", "invoice_wait"].includes(s)) {
-    return "processing";
+// Статус рахунку напряму в monobank (якщо вебхук загубився чи ще не прийшов)
+const fetchStatus = (invoiceId) => call(`/api/merchant/invoice/status?invoiceId=${encodeURIComponent(invoiceId)}`);
+
+// Повернення коштів (повне, якщо amount не вказано). Відповідь: { status: processing | success | failure }
+async function cancelInvoice(invoiceId, amountUah) {
+  const body = { invoiceId, extRef: `refund-${Date.now().toString(36)}` };
+  if (amountUah) body.amount = Math.round(Number(amountUah) * 100);
+  return call("/api/merchant/invoice/cancel", { method: "POST", body });
+}
+// Скасувати неоплачений рахунок (посилання на оплату перестає діяти)
+const removeInvoice = (invoiceId) => call("/api/merchant/invoice/remove", { method: "POST", body: { invoiceId } });
+
+// ---------- Перевірка підпису вебхука (заголовок X-Sign, ECDSA + SHA-256 по «сирому» тілу) ----------
+let pubKey = null;
+let keyFetchedAt = 0;
+async function loadKey(force) {
+  // Ключ кешуємо; оновлюємо, лише якщо підпис не зійшовся (не частіше ніж раз на 10 хв)
+  if (pubKey && (!force || Date.now() - keyFetchedAt < 600_000)) return pubKey;
+  const { key } = await call("/api/merchant/pubkey");
+  pubKey = crypto.createPublicKey(Buffer.from(String(key), "base64").toString("utf8"));
+  keyFetchedAt = Date.now();
+  return pubKey;
+}
+async function verifyWebhook(rawBody, xSign) {
+  if (!configured() || !xSign || !Buffer.isBuffer(rawBody) || !rawBody.length) return null;
+  const sig = Buffer.from(String(xSign), "base64");
+  for (const force of [false, true]) {
+    let key;
+    try { key = await loadKey(force); } catch (e) { console.error("monobank pubkey:", e.message); return null; }
+    let ok = false;
+    try { ok = crypto.verify("sha256", rawBody, key, sig); } catch { ok = false; }
+    if (ok) {
+      try { return JSON.parse(rawBody.toString("utf8")); } catch { return null; }
+    }
   }
-  return null; // невідомий / не знайдено — нічого не змінюємо
+  return null;
 }
 
-module.exports = { configured, sandbox: SANDBOX, checkout, verify, fetchStatus, mapStatus };
+// Статус monobank → наш статус оплати
+function mapStatus(s) {
+  if (s === "success") return "paid";
+  if (s === "failure" || s === "expired") return "failed";
+  if (s === "reversed") return "refunded";
+  if (s === "processing" || s === "hold") return "processing";
+  return null; // created — покупець ще не платив, нічого не змінюємо
+}
+
+const METHOD = { pan: "картка", apple: "Apple Pay", google: "Google Pay", monobank: "monobank", wallet: "збережена картка", direct: "картка" };
+// Короткий опис для адмінки: спосіб, маска картки, причина відмови
+function describe(p) {
+  const i = p.paymentInfo || {};
+  return [METHOD[i.paymentMethod] || i.paymentMethod, i.maskedPan, p.failureReason].filter(Boolean).join(" · ").slice(0, 200);
+}
+
+module.exports = { configured, sandbox: SANDBOX, createInvoice, fetchStatus, cancelInvoice, removeInvoice, verifyWebhook, mapStatus, describe };

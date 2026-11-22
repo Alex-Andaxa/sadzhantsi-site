@@ -24,7 +24,7 @@ if (process.env.TRUST_PROXY === "1" || process.env.NODE_ENV === "production") ap
 app.disable("x-powered-by");
 
 // Захисні заголовки. CSP дозволяє скрипти, стилі й запити лише з нашого сайту
-// (форма оплати — ще на LiqPay), забороняє вбудовувати сайт у чужі сторінки.
+// (оплата — на сторінці monobank, куди переходимо посиланням), забороняє вбудовувати сайт у чужі сторінки.
 const CSP = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
@@ -32,7 +32,7 @@ const CSP = [
   "img-src 'self' data: blob:",
   "font-src 'self'",
   "connect-src 'self'",
-  "form-action 'self' https://www.liqpay.ua https://liqpay.ua https://*.liqpay.ua",
+  "form-action 'self'",
   "frame-ancestors 'self'",
   "base-uri 'self'",
   "object-src 'none'",
@@ -55,7 +55,8 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 // Звичайні запити — малий ліміт; адмінка (з фото) парсить тіло сама, вже після перевірки прав
 const smallJson = express.json({ limit: "100kb" });
-app.use((req, res, next) => (req.path.startsWith("/api/admin") ? next() : smallJson(req, res, next)));
+const PAYMENT_WEBHOOK = "/api/payments/mono/webhook";
+app.use((req, res, next) => (req.path.startsWith("/api/admin") || req.path === PAYMENT_WEBHOOK ? next() : smallJson(req, res, next)));
 
 app.use(express.static(path.join(__dirname, "public"), { extensions: ["html"] }));
 app.use("/uploads", express.static(UPLOADS_DIR, {
@@ -146,13 +147,12 @@ const requireUser = (req, res, next) =>
 const requireAdmin = (req, res, next) =>
   req.user?.is_admin ? next() : res.status(403).json({ error: "Доступ лише для адміністратора" });
 
-// Повідомлення від LiqPay приходять як звичайна форма (data + signature) і перевіряються підписом
-const PAYMENT_CALLBACK = "/api/payments/liqpay/callback";
-app.post(PAYMENT_CALLBACK, express.urlencoded({ extended: false, limit: "50kb" }));
+// Вебхук monobank: сире тіло для перевірки підпису X-Sign
+app.post(PAYMENT_WEBHOOK, express.raw({ type: "*/*", limit: "50kb" }));
 
 // Захист від CSRF: змінювати дані можна лише JSON-запитами з нашого ж сайту
 app.use("/api", (req, res, next) => {
-  if (req.originalUrl.split("?")[0] === PAYMENT_CALLBACK) return next();
+  if (req.originalUrl.split("?")[0] === PAYMENT_WEBHOOK) return next();
   if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method) && !req.is("application/json")) {
     return res.status(415).json({ error: "Очікується JSON" });
   }
@@ -252,6 +252,7 @@ app.post("/api/auth/resend", async (req, res) => {
 // ---------- Авторизація ----------
 // Крок 1: перевіряємо дані та надсилаємо код на пошту. Акаунт ще не створюється.
 app.post("/api/auth/register", async (req, res) => {
+  if (req.body.agree !== true) throw new HttpError(400, "Підтвердіть згоду з політикою конфіденційності та обробкою персональних даних");
   const name = str(req.body.name, 100);
   const email = str(req.body.email, 200).toLowerCase();
   const password = typeof req.body.password === "string" ? req.body.password : "";
@@ -457,7 +458,10 @@ app.get("/api/settings", (req, res) => res.json({ min_order: minOrder() }));
 // Контакти магазину (сторінка «Про нас», футер) — редагуються в адмінці
 const CONTACT_KEYS = ["contact_phone", "contact_email", "contact_address", "contact_hours", "contact_telegram", "contact_viber"];
 const contacts = () => Object.fromEntries(CONTACT_KEYS.map((k) => [k.replace("contact_", ""), getSetting(k, "")]));
-app.get("/api/site", (req, res) => res.json({ contacts: contacts() }));
+// Реквізити продавця (оферта, футер, «Про нас») — обов'язкові для підключення еквайрингу
+const SELLER_KEYS = ["seller_name", "seller_code", "seller_address"];
+const seller = () => Object.fromEntries(SELLER_KEYS.map((k) => [k.replace("seller_", ""), getSetting(k, "")]));
+app.get("/api/site", (req, res) => res.json({ contacts: contacts(), seller: seller() }));
 
 // Стрічка випадкових лотів для головної
 app.get("/api/products/random", (req, res) => {
@@ -575,7 +579,8 @@ app.get("/api/delivery/:carrier/:kind", async (req, res, next) => {
 });
 
 // ---------- Замовлення ----------
-app.post("/api/orders", wrap((req, res) => {
+app.post("/api/orders", async (req, res) => {
+  if (req.body.agree !== true) throw new HttpError(400, "Підтвердіть згоду з умовами публічної оферти та політикою конфіденційності");
   if (!limits.take(`order:${req.ip}`, 10, 600_000)) {
     throw new HttpError(429, "Забагато замовлень за короткий час. Зачекайте кілька хвилин або зателефонуйте нам.");
   }
@@ -627,12 +632,15 @@ app.post("/api/orders", wrap((req, res) => {
     return id;
   });
   const result = { id: Number(orderId), total, token: accessToken, payment_method: paymentMethod };
-  if (paymentMethod === "online") result.payment = startPayment(req, Number(orderId));
+  if (paymentMethod === "online") {
+    try { result.payment = await startPayment(req, Number(orderId)); }
+    catch (e) { console.error("monobank invoice:", e.message); result.payment_error = true; }
+  }
   res.status(201).json(result);
-}));
+});
 
 // ---------- Оплата ----------
-// Доступні способи: післяплата та онлайн (лише якщо LiqPay налаштовано і спосіб увімкнено в адмінці)
+// Доступні способи: післяплата та онлайн (лише якщо monobank налаштовано і спосіб увімкнено в адмінці)
 function paymentOptions() {
   return {
     cod: getSetting("pay_cod", "1") === "1",
@@ -664,44 +672,48 @@ function validIban(iban) {
 
 const siteUrl = (req) => (process.env.SITE_URL || `${req.protocol}://${req.get("host")}`).replace(/\/$/, "");
 
-// Нова спроба оплати: для кожної — свій order_id у LiqPay
-function startPayment(req, orderId) {
+// Нова спроба оплати: рахунок monobank (кожна спроба — окремий рахунок, invoiceId зберігаємо в pay_order_id)
+async function startPayment(req, orderId) {
   const o = db.prepare("SELECT * FROM orders WHERE id = ?").get(orderId);
-  const payOrderId = `ZS${o.id}-${Date.now().toString(36)}`;
-  db.prepare("UPDATE orders SET pay_order_id = ?, payment_status = 'awaiting', updated_at = datetime('now') WHERE id = ?")
-    .run(payOrderId, o.id);
   const base = siteUrl(req);
-  return payments.checkout({
-    payOrderId,
+  const inv = await payments.createInvoice({
     amount: o.total,
-    description: `Замовлення №${o.id} — Ягідник`,
-    resultUrl: `${base}/payment?order=${o.id}&token=${o.access_token}`,
-    serverUrl: `${base}${PAYMENT_CALLBACK}`,
+    reference: `ZS${o.id}-${Date.now().toString(36)}`,
+    destination: `Оплата замовлення №${o.id} — Ягідник`,
+    redirectUrl: `${base}/payment?order=${o.id}&token=${o.access_token}`,
+    webHookUrl: `${base}${PAYMENT_WEBHOOK}`,
   });
+  db.prepare(`UPDATE orders SET pay_order_id = ?, payment_status = 'awaiting', pay_event_at = '', updated_at = datetime('now')
+              WHERE id = ?`).run(inv.invoiceId, o.id);
+  return { url: inv.pageUrl };
 }
 
-// Застосувати відповідь LiqPay до замовлення (з callback або запиту статусу)
+// Застосувати статус рахунку monobank до замовлення (з вебхука або запиту статусу)
 function applyPayment(p) {
-  if (!p || !p.order_id || p.err_code === "payment_not_found") return;
-  // order_id у LiqPay має вигляд ZS<номер замовлення>-<спроба>
-  const m = /^ZS(\d+)-[a-z0-9]+$/.exec(String(p.order_id));
+  if (!p || !p.invoiceId) return;
+  // reference має вигляд ZS<номер замовлення>-<спроба>
+  const m = /^ZS(\d+)-[a-z0-9]+$/.exec(String(p.reference || ""));
   if (!m) return;
   const o = db.prepare("SELECT * FROM orders WHERE id = ?").get(Number(m[1]));
   if (!o || o.payment_method !== "online") return;
   const status = payments.mapStatus(p.status);
   if (!status) return;
-  // Успішну оплату зараховуємо з будь-якої спроби (покупець міг оплатити в іншій вкладці),
+  const current = String(p.invoiceId) === o.pay_order_id;
+  // Успішну оплату й повернення зараховуємо з будь-якої спроби (покупець міг оплатити в іншій вкладці),
   // а проміжні статуси та відмови — лише з поточної спроби
-  if (status !== "paid" && status !== "refunded" && String(p.order_id) !== o.pay_order_id) return;
-  // Сума й валюта мають збігатися із замовленням
-  if (status === "paid" && (Number(p.amount) !== Number(o.total) || p.currency !== "UAH")) {
-    console.error(`LiqPay: сума не збігається для замовлення ${o.id}: ${p.amount} ${p.currency}`);
+  if (status !== "paid" && status !== "refunded" && !current) return;
+  // Вебхуки можуть приходити не по черзі: старішу подію поточної спроби ігноруємо
+  const at = String(p.modifiedDate || "");
+  if (current && at && o.pay_event_at && at < o.pay_event_at) return;
+  // Сума й валюта мають збігатися із замовленням (monobank — у копійках)
+  if (status === "paid" && (Number(p.amount) !== Number(o.total) * 100 || Number(p.ccy || 980) !== 980)) {
+    console.error(`monobank: сума не збігається для замовлення ${o.id}: ${p.amount} коп.`);
     return;
   }
   if (o.payment_status === "paid" && status !== "refunded") return; // оплачене не «відкочуємо»
-  const info = [p.paytype, p.sender_card_mask2, p.err_description || p.err_code].filter(Boolean).join(" · ").slice(0, 200);
-  db.prepare(`UPDATE orders SET payment_status = ?, payment_info = ?, paid_at = CASE WHEN ? = 'paid' THEN datetime('now') ELSE paid_at END,
-              updated_at = datetime('now') WHERE id = ?`).run(status, info, status, o.id);
+  db.prepare(`UPDATE orders SET payment_status = ?, payment_info = ?, pay_event_at = ?,
+              paid_at = CASE WHEN ? = 'paid' THEN datetime('now') ELSE paid_at END, updated_at = datetime('now') WHERE id = ?`)
+    .run(status, payments.describe(p), current ? at : o.pay_event_at, status, o.id);
 }
 
 // Доступ до замовлення: власник, адміністратор або гість із токеном із посилання
@@ -719,11 +731,11 @@ app.get("/api/checkout/config", (req, res) => {
   res.json({ min_order: minOrder(), payment: paymentOptions(), sandbox: payments.sandbox });
 });
 
-// Статус замовлення та оплати (сторінка повернення з LiqPay, кабінет)
+// Статус замовлення та оплати (сторінка повернення з оплати monobank, кабінет)
 app.get("/api/orders/:id/status", async (req, res) => {
   let o = orderForAccess(req, req.params.id, req.query.token);
   if (o.payment_method === "online" && ["awaiting", "processing"].includes(o.payment_status) && o.pay_order_id && payments.configured()) {
-    try { applyPayment(await payments.fetchStatus(o.pay_order_id)); } catch (e) { console.error("LiqPay status:", e.message); }
+    try { applyPayment(await payments.fetchStatus(o.pay_order_id)); } catch (e) { console.error("monobank status:", e.message); }
     o = db.prepare("SELECT * FROM orders WHERE id = ?").get(o.id);
   }
   res.json({
@@ -741,18 +753,23 @@ app.get("/api/orders/:id/status", async (req, res) => {
 });
 
 // Повторна спроба онлайн-оплати
-app.post("/api/orders/:id/pay", wrap((req, res) => {
+app.post("/api/orders/:id/pay", async (req, res) => {
   const o = orderForAccess(req, req.params.id, req.body.token);
   if (o.payment_method !== "online") throw new HttpError(400, "Це замовлення оплачується при отриманні");
   if (o.payment_status === "paid") throw new HttpError(400, "Замовлення вже оплачено");
   if (o.status === "cancelled") throw new HttpError(400, "Замовлення скасовано");
   if (!paymentOptions().online) throw new HttpError(503, "Онлайн-оплата тимчасово недоступна");
-  res.json({ payment: startPayment(req, o.id) });
-}));
+  try {
+    res.json({ payment: await startPayment(req, o.id) });
+  } catch (e) {
+    console.error("monobank invoice:", e.message);
+    throw new HttpError(502, "Не вдалося створити оплату. Спробуйте ще раз за хвилину.");
+  }
+});
 
-// Повідомлення від LiqPay про зміну статусу платежу (server_url)
-app.post(PAYMENT_CALLBACK, (req, res) => {
-  const p = payments.verify(req.body?.data, req.body?.signature);
+// Вебхук monobank про зміну статусу рахунку (підпис X-Sign перевіряється відкритим ключем monobank)
+app.post(PAYMENT_WEBHOOK, async (req, res) => {
+  const p = await payments.verifyWebhook(req.body, req.get("x-sign"));
   if (!p) return res.status(400).send("bad signature");
   applyPayment(p);
   res.send("ok");
@@ -1055,13 +1072,14 @@ const adminSettings = () => ({
   pay_cod: getSetting("pay_cod", "1") === "1",
   pay_online: getSetting("pay_online", "1") === "1",
   pay_iban: getSetting("pay_iban", "0") === "1",
-  liqpay_configured: payments.configured(),
-  liqpay_sandbox: payments.sandbox,
+  online_configured: payments.configured(),
+  online_sandbox: payments.sandbox,
   iban_recipient: getSetting("iban_recipient", ""),
   iban_number: getSetting("iban_number", ""),
   iban_code: getSetting("iban_code", ""),
   iban_bank: getSetting("iban_bank", ""),
   contacts: contacts(),
+  seller: seller(),
 });
 admin.get("/settings", (req, res) => res.json(adminSettings()));
 admin.put("/settings", wrap((req, res) => {
@@ -1080,6 +1098,15 @@ admin.put("/settings", wrap((req, res) => {
     setSetting("iban_code", code);
     setSetting("iban_recipient", str(req.body.iban_recipient, 150));
     setSetting("iban_bank", str(req.body.iban_bank, 100));
+  }
+  // Реквізити продавця
+  if (req.body.seller && typeof req.body.seller === "object") {
+    const sl = req.body.seller;
+    const code = str(sl.code, 12).replace(/\s+/g, "");
+    if (code && !/^(\d{8}|\d{10})$/.test(code)) throw new HttpError(400, "Код продавця: ЄДРПОУ — 8 цифр, РНОКПП ФОП — 10 цифр");
+    setSetting("seller_name", str(sl.name, 150));
+    setSetting("seller_code", code);
+    setSetting("seller_address", str(sl.address, 250));
   }
   // Контакти магазину
   if (req.body.contacts && typeof req.body.contacts === "object") {
@@ -1125,6 +1152,23 @@ admin.patch("/customers/:id/role", wrap((req, res) => {
   console.log(`[права] ${req.user.email} ${req.body.is_admin ? "надав" : "забрав"} права адміністратора: ${u.email}`);
   res.json({ ok: true, is_admin: req.body.is_admin });
 }));
+
+// Повернення коштів за онлайн-оплату (monobank). Повне повернення суми замовлення.
+admin.post("/orders/:id/refund", async (req, res) => {
+  const o = db.prepare("SELECT * FROM orders WHERE id = ?").get(toInt(req.params.id));
+  if (!o) throw new HttpError(404, "Замовлення не знайдено");
+  if (o.payment_method !== "online" || !o.pay_order_id) throw new HttpError(400, "Повернення можливе лише для онлайн-оплати карткою");
+  if (o.payment_status !== "paid") throw new HttpError(400, "Замовлення не оплачене — повертати нічого");
+  if (!payments.configured()) throw new HttpError(503, "monobank не налаштовано");
+  let r;
+  try { r = await payments.cancelInvoice(o.pay_order_id); }
+  catch (e) { console.error("monobank refund:", e.message); throw new HttpError(502, "monobank не прийняв повернення: " + e.message.replace(/^monobank \d+: /, "")); }
+  const status = r.status === "success" ? "refunded" : r.status === "failure" ? "paid" : "processing";
+  const info = r.status === "success" ? "Кошти повернено" : r.status === "failure" ? "Повернення відхилено" : "Повернення в обробці";
+  db.prepare("UPDATE orders SET payment_status = ?, payment_info = ?, updated_at = datetime('now') WHERE id = ?").run(status, info, o.id);
+  console.log(`[повернення] ${req.user.email}: замовлення №${o.id}, ${o.total} грн → ${r.status}`);
+  res.json({ ok: true, status: r.status, payment_status: status });
+});
 
 // Замовлення (усі покупці, зокрема гості)
 admin.get("/orders", wrap((req, res) => {
