@@ -42,6 +42,7 @@
       <h2>Контакти</h2>
       <ul class="contacts contacts-lg" id="contactList"><li class="hint">Завантаження…</li></ul>
       <p class="hint" style="margin-top:14px">Питання щодо замовлення? Вкажіть його номер — так ми відповімо швидше.</p>
+      <div class="seller-card" id="sellerCard" hidden></div>
     </aside>
   </div>
 </main>
@@ -50,7 +51,15 @@
 
 <script src="/common.js"></script>
 <script>
-  siteInfo().then(({ contacts }) => {
+  siteInfo().then(({ contacts, seller = {} }) => {
+    if (seller.name || seller.code || seller.address) {
+      $("sellerCard").hidden = false;
+      $("sellerCard").innerHTML = [
+        seller.name && `<div><small>Продавець</small>${esc(seller.name)}</div>`,
+        seller.code && `<div><small>РНОКПП / ЄДРПОУ</small>${esc(seller.code)}</div>`,
+        seller.address && `<div><small>Адреса</small>${esc(seller.address)}</div>`,
+      ].filter(Boolean).join("") + `<p class="hint" style="margin:6px 0 0"><a href="/offer">Публічна оферта</a> · <a href="/returns">Повернення та обмін</a></p>`;
+    }
     const items = contactItems(contacts);
     $("contactList").innerHTML = items.length
       ? items.join("")
