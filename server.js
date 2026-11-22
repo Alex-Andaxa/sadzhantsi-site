@@ -792,7 +792,8 @@ app.post("/api/orders/:id/pay", async (req, res) => {
 // Вебхук monobank про зміну статусу рахунку (підпис X-Sign перевіряється відкритим ключем monobank)
 app.post(PAYMENT_WEBHOOK, async (req, res) => {
   const p = await payments.verifyWebhook(req.body, req.get("x-sign"));
-  if (!p) return res.status(400).send("bad signature");
+  if (!p) { console.error("monobank webhook: підпис не зійшовся"); return res.status(400).send("bad signature"); }
+  console.log(`monobank webhook: ${p.reference || p.invoiceId} → ${p.status}`);
   applyPayment(p);
   res.send("ok");
 });
