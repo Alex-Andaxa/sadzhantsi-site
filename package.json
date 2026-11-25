@@ -4,15 +4,16 @@
   "private": true,
   "type": "commonjs",
   "scripts": {
-    "start": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning server.js",
-    "create-admin": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning scripts/create-admin.js",
-    "backup": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning scripts/backup.js"
+    "start": "node --env-file-if-exists=.env server.js",
+    "create-admin": "node --env-file-if-exists=.env scripts/create-admin.js",
+    "backup": "node --env-file-if-exists=.env scripts/backup.js"
   },
   "engines": {
-    "node": ">=22.13"
+    "node": ">=22.12"
   },
   "dependencies": {
     "7z-wasm": "1.2.0",
+    "better-sqlite3": "13.0.3",
     "express": "^5.1.0",
     "nodemailer": "10.1.7"
   }

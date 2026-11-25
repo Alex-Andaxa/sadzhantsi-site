@@ -1,14 +1,17 @@
-// База даних SQLite (вбудований модуль Node.js >= 22.13)
+// База даних SQLite через better-sqlite3 (стабільна бібліотека; раніше — експериментальний node:sqlite)
 const path = require("node:path");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
-const { DatabaseSync } = require("node:sqlite");
+const Database = require("better-sqlite3");
 
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, "data", "shop.db");
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
-const db = new DatabaseSync(DB_PATH);
-db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
+const db = new Database(DB_PATH);
+db.pragma("journal_mode = WAL");    // читання не блокуються записом
+db.pragma("foreign_keys = ON");     // зв'язки між таблицями (замовлення → товари тощо)
+db.pragma("busy_timeout = 5000");   // якщо база зайнята іншим записом — чекати до 5 с, а не падати з помилкою
+db.pragma("synchronous = NORMAL");  // у режимі WAL — швидший запис без ризику зіпсувати базу
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS users (
