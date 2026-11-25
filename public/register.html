@@ -57,7 +57,7 @@
   api("/api/me").then(({ user }) => { if (user) location.replace(nextUrl()); }).catch(() => {});
 
   attachPhoneInput($("regPhone"));
-  $("regPhone").placeholder = "Телефон +380 (XX) XXX-XX-XX (необов'язково)";
+  $("regPhone").placeholder = "Телефон (необов'язково)";
 
   let pending = null;
   let email = "";

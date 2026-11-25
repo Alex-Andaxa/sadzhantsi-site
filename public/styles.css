@@ -1144,3 +1144,58 @@ label.check.agree a { color: var(--link); }
 .pay-logos .pl-dark { display: none; }
 :root[data-theme="dark"] .pay-logos .pl-light { display: none; }
 :root[data-theme="dark"] .pay-logos .pl-dark { display: block; }
+
+/* =====================================================================
+   Вирівнювання на телефонах і при збільшеному масштабі
+   ===================================================================== */
+/* Сторінка лота: «Купити» на всю ширину поруч із кількістю; дві дії — рівними половинами */
+.buy-row { flex-wrap: nowrap; }
+.buy-row .qty-input { flex: 0 0 88px; width: 88px; min-height: 46px; }
+.buy-row .btn { flex: 1 1 auto; min-height: 46px; }
+.lot-actions-row { flex-wrap: nowrap; }
+.lot-actions-row .btn-outline { flex: 1 1 0; min-width: 0; justify-content: center; padding: 0 12px; white-space: nowrap; }
+.lot-actions-row .btn-outline span { overflow: hidden; text-overflow: ellipsis; }
+.product .price { margin: 10px 0 4px; }
+
+/* Масштаб 150–200% і планшети: фото й опис лота поруч, фото не займає весь екран */
+@media (max-width: 760px) and (min-width: 561px) {
+  .product { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 20px; }
+}
+@media (max-width: 560px) {
+  .product { grid-template-columns: 1fr; gap: 16px; }
+  .pg-main { aspect-ratio: 4 / 3; max-height: 62vh; }
+}
+
+/* Заголовки сторінок на вузьких екранах */
+@media (max-width: 560px) {
+  .checkout h1, .wl-head h1, .catalog-head h1, .legal h1 { font-size: 1.5rem; line-height: 1.2; }
+  .product h1 { font-size: 1.45rem; }
+}
+
+/* Сторінки з правилами: менше відступів — ширший текст */
+@media (max-width: 560px) {
+  .legal { padding: 16px; font-size: .96rem; line-height: 1.6; }
+  .legal h2 { font-size: 1.08rem; margin-top: 20px; }
+  .legal ul { padding-left: 18px; }
+  .seller-card { padding: 12px; }
+}
+
+/* Футер на телефоні: дві колонки посилань поруч, бренд і контакти — на всю ширину */
+@media (max-width: 520px) {
+  .footer-grid { grid-template-columns: 1fr 1fr; gap: 20px 16px; }
+  .footer-grid > :first-child, .footer-grid > :last-child { grid-column: 1 / -1; }
+  .footer-links { gap: 8px; font-size: .92rem; }
+  .pay-logos img { height: 18px; }
+  .footer-copy { font-size: .78rem; }
+}
+
+/* Адмінка на телефоні: у шапці лише іконки, без горизонтального прокручування */
+.nav-actions .account-link .ic + .auth-label { margin-left: 2px; }
+@media (max-width: 520px) {
+  .nav > .logo { min-width: 0; white-space: nowrap; }
+  .nav-actions .account-link { width: 40px; padding: 0; justify-content: center; }
+}
+
+/* Кнопки й поля: текст не вилазить за край, на вузьких екранах переноситься акуратно */
+.btn, .btn-green, .btn-outline { max-width: 100%; }
+input::placeholder, textarea::placeholder { text-overflow: ellipsis; }
