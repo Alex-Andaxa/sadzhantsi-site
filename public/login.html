@@ -19,6 +19,7 @@
       <form id="authForm">
         <input name="email" type="email" placeholder="Email" required autocomplete="email" autofocus>
         <input name="password" type="password" placeholder="Пароль" required autocomplete="current-password">
+        <p class="forgot-link"><a href="/forgot">Забули пароль?</a></p>
         <p class="error"></p>
         <button class="btn" type="submit">Увійти</button>
       </form>
@@ -31,7 +32,7 @@
 <script>
   // Посилання на іншу форму зберігає адресу повернення
   const next = new URLSearchParams(location.search).get("next");
-  if (next) document.querySelectorAll(".auth-switch a").forEach(a => a.href += "?next=" + encodeURIComponent(next));
+  if (next) document.querySelectorAll(".auth-switch a, .forgot-link a").forEach(a => a.href += "?next=" + encodeURIComponent(next));
 
   // Уже увійшли — одразу далі
   api("/api/me").then(({ user }) => { if (user) location.replace(nextUrl()); }).catch(() => {});

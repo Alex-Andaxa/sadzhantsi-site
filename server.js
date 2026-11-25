@@ -274,7 +274,7 @@ const newCode = () => String(crypto.randomInt(0, 1_000_000)).padStart(6, "0");
 // Код надсилається на email (обов'язково) і додатково у Viber, якщо відомий телефон.
 // Повертає { token, viber } — viber: маскований номер, якщо код пішов і туди.
 const CODES_PER_IP_HOUR = 8;
-async function issueCode({ purpose, email, userId = null, payload = {}, phone = "", ip = "" }) {
+async function issueCode({ purpose, email, userId = null, payload = {}, phone = "", ip = "", send = true }) {
   const now = Date.now();
   if (ip && !limits.allowed(`code:${ip}`, CODES_PER_IP_HOUR, 3600_000)) {
     throw new HttpError(429, `Забагато запитів коду з вашої мережі. Спробуйте через ${limits.retryMinutes(`code:${ip}`, 3600_000)} хв.`);
@@ -296,7 +296,7 @@ async function issueCode({ purpose, email, userId = null, payload = {}, phone = 
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(token, purpose, email, userId, hashCode(token, code), JSON.stringify(payload), now + CODE_TTL, now);
   try {
-    await sendCode(email, code, purpose);
+    if (send) await sendCode(email, code, purpose);
   } catch (e) {
     console.error("Помилка відправки листа:", e.message);
     db.prepare("DELETE FROM email_codes WHERE token = ?").run(token);
@@ -305,7 +305,7 @@ async function issueCode({ purpose, email, userId = null, payload = {}, phone = 
   if (ip) limits.record(`code:${ip}`);
   // Viber — у фоні: збій чи затримка TurboSMS не заважає підтвердженню через email
   let viber = null;
-  if (hasPhone(phone) && (viberConfigured || process.env.NODE_ENV !== "production")) {
+  if (send && hasPhone(phone) && (viberConfigured || process.env.NODE_ENV !== "production")) {
     viber = maskPhone(phone);
     sendCodeViber(phone, code, purpose).catch((e) => console.error("Помилка відправки коду у Viber:", e.message));
   }
@@ -348,9 +348,38 @@ app.post("/api/auth/resend", async (req, res) => {
   const payload = JSON.parse(row.payload);
   const phone = row.purpose === "register" ? payload.phone
     : db.prepare("SELECT phone FROM users WHERE id = ?").get(row.user_id)?.phone;
-  const { token, viber } = await issueCode({ purpose: row.purpose, email: row.email, userId: row.user_id, payload, phone, ip: req.ip });
-  res.json({ pending: token, viber, dev: !mailConfigured });
+  const silent = row.purpose === "reset" && !row.user_id;
+  const { token, viber } = await issueCode({ purpose: row.purpose, email: row.email, userId: row.user_id, payload, phone, ip: req.ip, send: !silent });
+  res.json({ pending: token, viber: row.purpose === "reset" ? null : viber, dev: !mailConfigured });
 });
+
+// ---------- Відновлення забутого пароля ----------
+// Крок 1: код на пошту (і у Viber, якщо в акаунті є телефон).
+// Відповідь однакова для будь-якої пошти — щоб не можна було перевірити, хто зареєстрований.
+app.post("/api/auth/forgot", async (req, res) => {
+  const email = str(req.body.email, 200).toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "Некоректний email");
+  const user = db.prepare("SELECT id, phone FROM users WHERE email = ?").get(email);
+  const { token } = await issueCode({
+    purpose: "reset", email, userId: user?.id ?? null, phone: user?.phone, ip: req.ip, send: !!user,
+  });
+  res.status(202).json({ pending: token, email, dev: !mailConfigured });
+});
+
+// Крок 2: код + новий пароль → пароль змінено, інші пристрої вийшли з акаунта, вхід виконано
+app.post("/api/auth/reset", wrap((req, res) => {
+  const password = typeof req.body.password === "string" ? req.body.password : "";
+  if (password.length < 8) throw new HttpError(400, "Пароль має містити щонайменше 8 символів");
+  if (req.body.password2 !== undefined && req.body.password2 !== password) throw new HttpError(400, "Паролі не збігаються");
+  const row = consumeCode(req.body.token, req.body.code, "reset");
+  const user = row.user_id && db.prepare("SELECT * FROM users WHERE id = ?").get(row.user_id);
+  if (!user) throw new HttpError(400, "Невірний код. Надішліть новий код.");
+  db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(password), user.id);
+  db.prepare("DELETE FROM sessions WHERE user_id = ?").run(user.id);
+  limits.reset(`login:${user.email}`); // зняти блокування після невдалих спроб входу
+  createSession(res, user.id);
+  res.json({ user: publicUser(user) });
+}));
 
 // ---------- Авторизація ----------
 // Крок 1: перевіряємо дані та надсилаємо код на пошту. Акаунт ще не створюється.
@@ -363,6 +392,7 @@ app.post("/api/auth/register", async (req, res) => {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new HttpError(400, "Некоректний email");
   const phone = phoneInput(req.body.phone);
   if (password.length < 8) throw new HttpError(400, "Пароль має містити щонайменше 8 символів");
+  if (req.body.password2 !== undefined && req.body.password2 !== password) throw new HttpError(400, "Паролі не збігаються");
   if (db.prepare("SELECT 1 FROM users WHERE email = ?").get(email)) {
     throw new HttpError(409, "Користувач з таким email вже існує");
   }
@@ -432,6 +462,7 @@ app.put("/api/me/password", requireUser, async (req, res) => {
   if (typeof newPass !== "string" || newPass.length < 8) {
     throw new HttpError(400, "Новий пароль має містити щонайменше 8 символів");
   }
+  if (req.body.next2 !== undefined && req.body.next2 !== newPass) throw new HttpError(400, "Нові паролі не збігаються");
   const { token, viber } = await issueCode({
     purpose: "password", email: req.user.email, userId: req.user.id, phone: req.user.phone, ip: req.ip,
     payload: { password_hash: hashPassword(newPass) },

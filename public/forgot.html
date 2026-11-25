@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Відновлення пароля — Ягідник</title>
+<script src="/theme.js"></script>
+<link rel="stylesheet" href="/styles.css">
+<link rel="icon" href="/img/logo.svg" type="image/svg+xml">
+</head>
+<body>
+
+<header class="site-header" id="siteHeader"></header>
+
+<main class="container page">
+  <div class="auth-wrap">
+    <div class="panel">
+      <!-- Крок 1: пошта -->
+      <div id="step1">
+        <h2>Відновлення пароля</h2>
+        <p class="hint">Вкажіть email, з яким ви реєструвались. Ми надішлемо 6-значний код, щоб задати новий пароль.</p>
+        <form id="emailForm">
+          <input name="email" type="email" placeholder="Email" required autocomplete="email" autofocus>
+          <p class="error"></p>
+          <button class="btn" type="submit">Надіслати код</button>
+        </form>
+        <p class="auth-switch">Згадали пароль? <a href="/login">Увійти</a></p>
+      </div>
+
+      <!-- Крок 2: код і новий пароль -->
+      <div id="step2" hidden>
+        <h2>Новий пароль</h2>
+        <p class="code-note" id="codeNote"></p>
+        <form id="resetForm" style="margin-top:12px">
+          <input name="code" class="code-input" inputmode="numeric" autocomplete="one-time-code"
+                 maxlength="6" pattern="\d{6}" placeholder="000000" required aria-label="6-значний код з листа">
+          <input name="password" type="password" placeholder="Новий пароль (мін. 8 символів)" required minlength="8" autocomplete="new-password">
+          <input name="password2" type="password" placeholder="Повторіть новий пароль" required minlength="8" autocomplete="new-password">
+          <p class="error"></p>
+          <button class="btn" type="submit">Зберегти новий пароль</button>
+        </form>
+        <p class="auth-switch">
+          <button class="link-btn" id="resendBtn" type="button">Надіслати код ще раз</button> ·
+          <button class="link-btn" id="backBtn" type="button">Інший email</button>
+        </p>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="/common.js"></script>
+<script>
+  const next = new URLSearchParams(location.search).get("next");
+  if (next) document.querySelectorAll(".auth-switch a").forEach(a => a.href += "?next=" + encodeURIComponent(next));
+
+  let pending = null;
+  let email = "";
+
+  function showStep2(data) {
+    pending = data.pending;
+    $("step1").hidden = true;
+    $("step2").hidden = false;
+    // Не підтверджуємо, чи існує акаунт — так ніхто не дізнається чужі адреси
+    $("codeNote").innerHTML = `Якщо акаунт з поштою <b>${esc(email)}</b> існує, ми надіслали на неї 6-значний код
+      (а якщо в акаунті вказано телефон — ще й у Viber). Код дійсний 10 хвилин. Перевірте також папку «Спам».` +
+      (data.dev ? `<br><small>Режим розробки: пошту не налаштовано, код виведено в консоль сервера.</small>` : "");
+    const f = $("resetForm");
+    f.reset();
+    f.code.focus();
+    startResendTimer();
+  }
+
+  let timer;
+  function startResendTimer(sec = 60) {
+    const b = $("resendBtn");
+    clearInterval(timer);
+    b.disabled = true;
+    const tick = () => {
+      b.textContent = sec > 0 ? `Надіслати ще раз (${sec} с)` : "Надіслати код ще раз";
+      if (sec-- <= 0) { clearInterval(timer); b.disabled = false; }
+    };
+    tick();
+    timer = setInterval(tick, 1000);
+  }
+
+  async function submit(form, fn) {
+    const btn = form.querySelector("button[type=submit]");
+    const err = form.querySelector(".error");
+    err.textContent = "";
+    btn.disabled = true;
+    try { await fn(); } catch (e) { err.textContent = e.message; }
+    finally { btn.disabled = false; }
+  }
+
+  $("emailForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = e.target;
+    submit(f, async () => {
+      email = f.email.value.trim();
+      showStep2(await api("/api/auth/forgot", { method: "POST", body: { email } }));
+    });
+  });
+
+  // Код: лише цифри; після 6-ї цифри — фокус на поле пароля
+  $("resetForm").code.addEventListener("input", (e) => {
+    e.target.value = e.target.value.replace(/\D/g, "").slice(0, 6);
+    if (e.target.value.length === 6) $("resetForm").password.focus();
+  });
+
+  $("resetForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = e.target;
+    submit(f, async () => {
+      if (f.password.value !== f.password2.value) throw new Error("Паролі не збігаються");
+      await api("/api/auth/reset", {
+        method: "POST",
+        body: { token: pending, code: f.code.value, password: f.password.value, password2: f.password2.value },
+      });
+      $("step2").innerHTML = `<h2>Пароль змінено ✓</h2>
+        <p>Ви увійшли в акаунт з новим паролем. На інших пристроях виконано вихід.</p>
+        <p><a class="btn" href="${esc(nextUrl())}" style="text-decoration:none">Продовжити</a></p>`;
+    });
+  });
+
+  $("resendBtn").onclick = async () => {
+    const err = $("resetForm").querySelector(".error");
+    err.textContent = "";
+    try { showStep2(await api("/api/auth/resend", { method: "POST", body: { token: pending } })); }
+    catch (e) { err.textContent = e.message; }
+  };
+
+  $("backBtn").onclick = () => { $("step2").hidden = true; $("step1").hidden = false; };
+</script>
+</body>
+</html>

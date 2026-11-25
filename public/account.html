@@ -48,6 +48,7 @@
         <form id="passwordForm">
           <input name="current" type="password" placeholder="Поточний пароль" required autocomplete="current-password">
           <input name="next" type="password" placeholder="Новий пароль (мін. 8 символів)" required minlength="8" autocomplete="new-password">
+          <input name="next2" type="password" placeholder="Повторіть новий пароль" required minlength="8" autocomplete="new-password">
           <p class="error"></p>
           <button class="btn-green" type="submit">Змінити пароль</button>
         </form>
@@ -148,6 +149,7 @@
   }
 
   handleForm($("passwordForm"), async (data) => {
+    if (data.next !== data.next2) throw new Error("Нові паролі не збігаються");
     showPwCode(await api("/api/me/password", { method: "PUT", body: data }));
   });
   $("pwCodeForm").code.addEventListener("input", (e) => {

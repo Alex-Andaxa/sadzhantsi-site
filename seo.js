@@ -4,7 +4,7 @@
 const SITE_NAME = "Ягідник";
 const DEFAULT_IMAGE = "/img/og-logo.png";
 // Сторінки, які не повинні потрапляти в пошук
-const PRIVATE = new Set(["admin", "account", "checkout", "payment", "login", "register", "wishlist"]);
+const PRIVATE = new Set(["admin", "account", "checkout", "payment", "login", "register", "forgot", "wishlist"]);
 const PUBLIC_PAGES = ["/about", "/delivery", "/returns", "/offer", "/privacy"];
 
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -192,7 +192,7 @@ module.exports = function createSeo({ db, productSql, withImages, contacts, sell
   const robots = (base) => [
     "User-agent: *",
     "Allow: /",
-    ...["/admin", "/account", "/checkout", "/payment", "/login", "/register", "/wishlist", "/api/"].map((p) => `Disallow: ${p}`),
+    ...["/admin", "/account", "/checkout", "/payment", "/login", "/register", "/forgot", "/wishlist", "/api/"].map((p) => `Disallow: ${p}`),
     "", `Sitemap: ${base}/sitemap.xml`, "",
   ].join("\n");
 

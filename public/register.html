@@ -23,6 +23,7 @@
           <input name="email" type="email" placeholder="Email" required autocomplete="email">
           <input name="phone" id="regPhone" autocomplete="tel">
           <input name="password" type="password" placeholder="Пароль (мін. 8 символів)" required minlength="8" autocomplete="new-password">
+          <input name="password2" type="password" placeholder="Повторіть пароль" required minlength="8" autocomplete="new-password">
           <label class="check agree"><input type="checkbox" name="agree" required>
             <span>Я погоджуюсь з <a href="/privacy" target="_blank">політикою конфіденційності</a> та обробкою персональних даних</span></label>
           <p class="error"></p>
@@ -102,6 +103,7 @@
     submit(f, async () => {
       const data = Object.fromEntries(new FormData(f));
       if (data.phone && !phoneComplete(data.phone)) throw new Error("Вкажіть повний номер телефону або залиште поле порожнім");
+      if (data.password !== data.password2) throw new Error("Паролі не збігаються");
       email = data.email;
       showStep2(await api("/api/auth/register", { method: "POST", body: { ...data, agree: f.agree.checked } }));
     });

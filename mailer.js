@@ -27,7 +27,8 @@ const escHtml = (s) => String(s).replace(/[&<>"']/g, (c) =>
   ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 async function sendCode(to, code, purpose) {
-  const what = purpose === "register" ? "підтвердження реєстрації" : "підтвердження зміни пароля";
+  const WHAT = { register: "підтвердження реєстрації", password: "підтвердження зміни пароля", reset: "відновлення пароля" };
+  const what = WHAT[purpose] || "підтвердження";
   const subject = `${code} — код ${what} | Ягідник`;
   const text = `Ваш код ${what}: ${code}\n\nКод дійсний 10 хвилин. Якщо ви не робили цей запит — просто проігноруйте лист.`;
   const html = `

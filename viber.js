@@ -24,7 +24,8 @@ const maskPhone = (phone) => {
 async function sendCodeViber(phone, code, purpose) {
   const to = phoneDigits(phone);
   if (!hasPhone(to)) return false;
-  const what = purpose === "register" ? "підтвердження реєстрації" : "підтвердження зміни пароля";
+  const WHAT = { register: "підтвердження реєстрації", password: "підтвердження зміни пароля", reset: "відновлення пароля" };
+  const what = WHAT[purpose] || "підтвердження";
   const text = `Ягідник: код ${what} — ${code}. Дійсний 10 хвилин. Нікому його не повідомляйте.`;
   if (!configured) {
     // Локальна розробка: показуємо в консолі. На робочому сервері коди в журнал не пишемо.
