@@ -1,0 +1,15 @@
+# Litestream: безперервна копія бази в Cloudflare R2 (затримка — секунди).
+# Ключі й адреса беруться зі змінних середовища (файл /etc/sadzhantsi-r2.env, див. deploy/r2-setup.sh).
+access-key-id: ${R2_ACCESS_KEY_ID}
+secret-access-key: ${R2_SECRET_ACCESS_KEY}
+
+# Повний знімок бази — раз на добу; історію змін зберігаємо 30 днів
+# (можна відновити базу на будь-який момент за цей час)
+snapshot:
+  interval: 24h
+  retention: 720h
+
+dbs:
+  - path: /home/shop/sadzhantsi-site/data/shop.db
+    replica:
+      url: s3://${R2_BUCKET}/db?endpoint=${R2_ENDPOINT_HOST}&region=auto

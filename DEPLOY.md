@@ -39,7 +39,8 @@ ssh root@IP_СЕРВЕРА
 
 ```bash
 apt update && apt upgrade -y
-apt install -y curl git ufw debian-keyring debian-archive-keyring apt-transport-https
+apt install -y curl git ufw build-essential python3 debian-keyring debian-archive-keyring apt-transport-https
+# build-essential і python3 — для збирання бібліотеки бази (better-sqlite3), якщо готова збірка не завантажиться
 
 # Node.js 22 (LTS)
 curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
@@ -227,13 +228,12 @@ scp -r root@IP_СЕРВЕРА:/home/shop/sadzhantsi-site/data .\backup-data
 **Через Git:**
 
 1. На комп'ютері: `git add -A`, `git commit -m "що змінено"`, `git push`
-2. На сервері:
+2. На сервері (від root) — безпечне оновлення одним скриптом:
    ```bash
-   cd /home/shop/sadzhantsi-site
-   sudo -u shop git pull
-   sudo -u shop npm ci --omit=dev
-   systemctl restart sadzhantsi
+   bash /home/shop/sadzhantsi-site/deploy/update.sh
    ```
+   Скрипт робить копію бази, оновлює код, встановлює нові бібліотеки **в окрему папку** і підміняє робочі
+   лише після успішного встановлення. Якщо сайт після перезапуску не піднявся — повертає попередні бібліотеки.
 
 `data/` на сервері Git не чіпає — замовлення та фото залишаються.
 
@@ -255,6 +255,31 @@ scp -r root@IP_СЕРВЕРА:/home/shop/sadzhantsi-site/data .\backup-data
 Нові колонки в базі додаються автоматично під час запуску.
 
 ---
+
+## 9. Копії в Cloudflare R2 (база — безперервно, фото — щодня)
+
+Копії лише на самому VPS не врятують, якщо сервер зламається, тому база й фото дублюються в R2.
+
+1. Cloudflare → **R2 Object Storage** → **Create bucket** `yahidnyk-backups` (приватний).
+2. **Manage API tokens → Create API token**: *Object Read & Write*, лише цей bucket, TTL *Forever*.
+   Збережіть Access Key ID, Secret Access Key і адресу **S3 API**.
+3. На сервері встановлено `litestream` (база) і `rclone` (фото). Створіть `/etc/sadzhantsi-r2.env` (root, права 600):
+   ```ini
+   R2_ACCESS_KEY_ID=...
+   R2_SECRET_ACCESS_KEY=...
+   R2_ENDPOINT_HOST=<номер акаунта>.r2.cloudflarestorage.com
+   R2_BUCKET=yahidnyk-backups
+   ```
+4. `bash /home/shop/sadzhantsi-site/deploy/r2-setup.sh`
+
+**Відновлення бази з R2** (напр. на новому сервері, сайт зупинено):
+```bash
+systemctl stop sadzhantsi litestream
+set -a; . /etc/sadzhantsi-r2.env; set +a
+litestream restore -config /etc/litestream.yml -o /home/shop/sadzhantsi-site/data/shop.db.restored /home/shop/sadzhantsi-site/data/shop.db
+# перевірити, потім підмінити shop.db відновленим файлом і запустити сайт
+```
+**Відновлення фото:** `sudo -u shop env $(cat /etc/sadzhantsi-r2.env | xargs) rclone copy r2:yahidnyk-backups/uploads /home/shop/sadzhantsi-site/data/uploads`
 
 ## Перевірка після запуску
 
