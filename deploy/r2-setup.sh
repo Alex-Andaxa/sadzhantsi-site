@@ -76,7 +76,36 @@ Persistent=true
 WantedBy=timers.target
 EOF
 
+# Щогодинна перевірка копій: лист власнику, якщо копіювання зупинилось
+cat > /etc/systemd/system/backup-check.service <<UNIT
+[Unit]
+Description=Ягідник: перевірка резервних копій у R2
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=shop
+WorkingDirectory=$SITE
+EnvironmentFile=$ENVF
+EnvironmentFile=$SITE/.env
+ExecStart=/usr/bin/node scripts/backup-check.js
+UNIT
+cat > /etc/systemd/system/backup-check.timer <<UNIT
+[Unit]
+Description=Щогодинна перевірка резервних копій
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+
 systemctl daemon-reload
+systemctl enable --now backup-check.timer
 systemctl enable --now litestream
 systemctl enable --now r2-uploads.timer
 systemctl start r2-uploads.service

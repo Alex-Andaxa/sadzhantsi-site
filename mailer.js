@@ -45,4 +45,19 @@ async function sendCode(to, code, purpose) {
   await transport.sendMail({ from: SMTP_FROM || SMTP_USER, to, subject, text, html });
 }
 
-module.exports = { sendCode, mailConfigured: configured };
+// Службовий лист власнику магазину (сповіщення про резервні копії тощо)
+async function sendNotice(to, subject, lines) {
+  const text = lines.join("\n");
+  const html = `
+    <div style="font-family:system-ui,sans-serif;max-width:560px;margin:auto;padding:24px;color:#1f2a1f">
+      <h2 style="color:#2f6b3a;margin:0 0 12px">🧺 Ягідник</h2>
+      ${lines.map((l) => `<p style="margin:0 0 10px">${escHtml(l)}</p>`).join("")}
+    </div>`;
+  if (!configured) {
+    console.log(`\n[ЛИСТ → ${to}] ${subject}\n${text}\n`);
+    return;
+  }
+  await transport.sendMail({ from: SMTP_FROM || SMTP_USER, to, subject, text, html });
+}
+
+module.exports = { sendCode, sendNotice, mailConfigured: configured };
