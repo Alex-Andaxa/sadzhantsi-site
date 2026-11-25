@@ -1199,3 +1199,8 @@ label.check.agree a { color: var(--link); }
 /* Кнопки й поля: текст не вилазить за край, на вузьких екранах переноситься акуратно */
 .btn, .btn-green, .btn-outline { max-width: 100%; }
 input::placeholder, textarea::placeholder { text-overflow: ellipsis; }
+
+/* Вступний текст категорії в каталозі */
+.cat-intro { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; margin: 0 0 16px; color: var(--text); line-height: 1.6; }
+.cat-intro p { margin: 0 0 8px; }
+.cat-intro p:last-child { margin-bottom: 0; }

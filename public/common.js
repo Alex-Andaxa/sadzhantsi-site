@@ -185,7 +185,7 @@ function plural(n, one, few, many) {
 // Компактна картка лота (рекомендації)
 function miniCardHtml(p) {
   return `
-    <a class="mini-card" href="/product?id=${p.id}">
+    <a class="mini-card" href="${productUrl(p)}">
       <div class="mini-img">${photoHtml(p.images?.[0]?.url, p.name)}</div>
       <div class="mini-body">
         <b>${esc(p.name)}</b>
@@ -210,7 +210,7 @@ function cardGalleryHtml(p, idx = 0) {
 }
 const CART_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.7 12.2a2 2 0 0 0 2 1.6h7.7a2 2 0 0 0 2-1.5L21 8H6.2"/></svg>';
 function productCardHtml(p) {
-  const url = `/product?id=${p.id}`;
+  const url = productUrl(p);
   return `
     <article class="card ${p.in_stock ? "" : "out"}">
       ${wishBtnHtml(p.id, "card-wish")}
@@ -523,7 +523,14 @@ function fmtDate(sqlDate) {
 }
 
 // Фото товару або заглушка, якщо фото немає
+// Адреси сторінок з назви (для пошукових систем): /product/yablunia-holden, /catalog/yabluka
+const productUrl = (p) => (p?.slug ? `/product/${encodeURIComponent(p.slug)}` : `/product?id=${p?.id ?? p}`);
+const catUrl = (c) => (c?.slug ? `/catalog/${encodeURIComponent(c.slug)}` : `/catalog?cat=${c?.id ?? c}`);
+// Зменшене фото у WebP: 400 px — картки й мініатюри, 800 px — сторінка товару
+const thumbUrl = (url, w = 400) => (url && url.startsWith("/uploads/products/") ? url.replace("/uploads/products/", `/img/p/${w}/`) : url);
+
 function imgTag(url, alt = "", cls = "") {
+  url = thumbUrl(url, 400);
   return url
     ? `<img src="${esc(url)}" alt="${esc(alt)}" class="${cls}" loading="lazy">`
     : `<span class="no-photo ${cls}" aria-hidden="true">${icon("sprout")}</span>`;
@@ -531,10 +538,10 @@ function imgTag(url, alt = "", cls = "") {
 
 // Фото лота в рамці однакового розміру: будь-яке фото видно повністю й по центру,
 // а вільне місце заповнює розмитий фон із цього ж фото — без білих смуг і без обрізання.
-function photoHtml(url, alt = "", { lazy = true } = {}) {
+function photoHtml(url, alt = "", { lazy = true, size = 400 } = {}) {
   if (!url) return imgTag(null);
-  const u = esc(url), l = lazy ? ' loading="lazy"' : "";
-  return `<span class="ph"><img class="ph-bg" src="${u}" alt="" aria-hidden="true"${l}><img class="ph-img" src="${u}" alt="${esc(alt)}"${l}></span>`;
+  const u = esc(thumbUrl(url, size)), bg = esc(thumbUrl(url, 400)), l = lazy ? ' loading="lazy"' : "";
+  return `<span class="ph"><img class="ph-bg" src="${bg}" alt="" aria-hidden="true"${l}><img class="ph-img" src="${u}" alt="${esc(alt)}"${l}></span>`;
 }
 
 // Безпечний редирект після входу: лише відносні шляхи цього сайту
@@ -905,9 +912,9 @@ const CartUI = {
       <div class="cm-list">
         ${s.lines.map(({ p, qty }) => `
           <div class="cm-item ${p.in_stock ? "" : "out"}">
-            <a href="/product?id=${p.id}" class="cm-img">${imgTag(p.images?.[0]?.url, p.name)}</a>
+            <a href="${productUrl(p)}" class="cm-img">${imgTag(p.images?.[0]?.url, p.name)}</a>
             <div class="cm-info">
-              <a href="/product?id=${p.id}" class="cm-name">${esc(p.name)}</a>
+              <a href="${productUrl(p)}" class="cm-name">${esc(p.name)}</a>
               ${p.in_stock ? "" : `<span class="stock out">✕ Немає в наявності — видаліть з кошика</span>`}
             </div>
             <button class="cm-del" type="button" data-act="del" data-id="${p.id}" title="Видалити" aria-label="Видалити ${esc(p.name)}">${icon("trash")}</button>
@@ -1178,7 +1185,7 @@ const Drawer = {
     try {
       await CartUI.load();
       const tops = (CartUI.categories || []).filter((c) => !c.parent_id);
-      d.querySelector(".dr-cats").innerHTML = tops.map((c) => `<a href="/catalog?cat=${c.id}">${esc(c.name)}</a>`).join("");
+      d.querySelector(".dr-cats").innerHTML = tops.map((c) => `<a href="${catUrl(c)}">${esc(c.name)}</a>`).join("");
     } catch (e) {}
   },
   dialog() {
@@ -1252,7 +1259,7 @@ function initHeaderSearch(form) {
     results = all.slice(0, 6);
     box.innerHTML = results.length
       ? results.map((p, i) => `
-          <a href="/product?id=${p.id}" class="hs-item" role="option" id="hs-${i}">
+          <a href="${productUrl(p)}" class="hs-item" role="option" id="hs-${i}">
             <span class="hs-img">${imgTag(p.images?.[0]?.url, p.name)}</span>
             <span class="hs-name">${esc(p.name)}${p.in_stock ? "" : `<small>Немає в наявності</small>`}</span>
             <b>${fmt(p.price)}</b>

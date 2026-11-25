@@ -154,6 +154,8 @@
     <label>Назва <input name="name" required maxlength="100"></label>
     <label>Розташування <select name="parent_id"></select></label>
     <label>Порядок сортування <input name="sort_order" type="number" step="1"></label>
+    <label>Вступний текст категорії <small class="hint" style="display:inline">(для покупців і Google; абзаци — через порожній рядок)</small>
+      <textarea name="description" rows="5" maxlength="3000" placeholder="Напр.: як вибрати сорт, коли садити, чим відрізняються саджанці з відкритою та закритою кореневою системою…"></textarea></label>
     <p class="error"></p>
     <div class="dialog-actions">
       <button class="btn-sm" type="button" data-close>Скасувати</button>
@@ -276,6 +278,7 @@
       clearError(f);
       f.name.value = cat.name;
       f.sort_order.value = cat.sort_order;
+      f.description.value = cat.description || "";
       f.parent_id.innerHTML = parentOptions(cat.id);
       f.parent_id.value = cat.parent_id ? String(cat.parent_id) : "";
       f.parent_id.disabled = !!cat.child_count; // категорію з підкатегоріями не можна вкласти в іншу
@@ -321,7 +324,7 @@
     const f = e.target;
     try {
       await api(`/api/admin/categories/${editingCatId}`, {
-        method: "PUT", body: { name: f.name.value, sort_order: Number(f.sort_order.value) || 0, parent_id: f.parent_id.value || null },
+        method: "PUT", body: { name: f.name.value, sort_order: Number(f.sort_order.value) || 0, parent_id: f.parent_id.value || null, description: f.description.value },
       });
       $("catDialog").close();
       await loadCategories();
@@ -358,7 +361,7 @@
           <small>${p.summary ? esc(p.summary) : "<i>Без короткого опису</i>"}</small>
         </div>
         <div class="lot-actions">
-          <a class="btn-sm" href="/product?id=${p.id}" target="_blank" title="Відкрити на сайті" aria-label="Відкрити на сайті" style="text-decoration:none">${icon("eye")}</a>
+          <a class="btn-sm" href="${p.slug ? "/product/" + encodeURIComponent(p.slug) : "/product?id=" + p.id}" target="_blank" title="Відкрити на сайті" aria-label="Відкрити на сайті" style="text-decoration:none">${icon("eye")}</a>
           <button class="btn-sm" data-act="edit" data-id="${p.id}">${icon("edit")} Редагувати</button>
           <button class="btn-sm danger" data-act="delete" data-id="${p.id}">${icon("trash")} Видалити</button>
         </div>

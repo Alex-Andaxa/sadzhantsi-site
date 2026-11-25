@@ -13,6 +13,7 @@ const PAYMENT_STATUSES = ["unpaid", "awaiting", "processing", "paid", "failed", 
 const { sendCode, mailConfigured } = require("./mailer");
 const { sendCodeViber, viberConfigured, hasPhone, maskPhone } = require("./viber");
 const limits = require("./limits");
+const { uniqueSlug } = require("./slug");
 
 const DELIVERY_METHODS = ["np", "up"];
 const ORDER_STATUSES = ["new", "confirmed", "shipped", "done", "cancelled"];
@@ -65,21 +66,101 @@ const VERSIONED = ["common.js", "styles.css", "theme.js"];
 const ASSET_VER = crypto.createHash("sha256")
   .update(VERSIONED.map((f) => fs.readFileSync(path.join(PUBLIC_DIR, f))).join("\n")).digest("hex").slice(0, 10);
 const htmlCache = new Map();
-app.use((req, res, next) => {
-  if (req.method !== "GET" && req.method !== "HEAD") return next();
-  let name = req.path === "/" ? "index" : req.path.slice(1).replace(/\.html$/, "");
-  if (!/^[a-z0-9_-]+$/i.test(name)) return next();
+function loadPage(name) {
   let html = htmlCache.get(name);
   if (html === undefined) {
     const file = path.join(PUBLIC_DIR, `${name}.html`);
-    if (!fs.existsSync(file)) return next();
+    if (!fs.existsSync(file)) return null;
     html = fs.readFileSync(file, "utf8")
       .replace(/(src|href)="\/(common\.js|styles\.css|theme\.js)"/g, `$1="/$2?v=${ASSET_VER}"`);
     htmlCache.set(name, html);
   }
-  res.set("Cache-Control", "no-cache");
-  res.type("html").send(html);
+  return html;
+}
+
+// Пошукова оптимізація (seo.js): сторінки з повним вмістом для роботів, карта сайту, robots.txt, фід товарів
+let seo;
+const seoApi = () => (seo ||= require("./seo")({
+  db, productSql: () => PUBLIC_PRODUCT_SQL, withImages: () => withImages, contacts: () => contacts(), seller: () => seller(),
+}));
+const sendHtml = (res, html, status = 200) => { res.set("Cache-Control", "no-cache"); res.status(status).type("html").send(html); };
+
+app.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  const base = siteUrl(req);
+  const S = seoApi();
+  // Службові файли для пошукових систем
+  if (req.path === "/robots.txt") return res.type("text/plain").set("Cache-Control", "public, max-age=3600").send(S.robots(base));
+  if (req.path === "/sitemap.xml") return res.type("application/xml").set("Cache-Control", "public, max-age=3600").send(S.sitemap(base));
+  if (req.path === "/feed.xml") return res.type("application/xml").set("Cache-Control", "public, max-age=3600").send(S.merchantFeed(base));
+
+  // Товар: /product/<адреса>; старі посилання /product?id=N — постійна переадресація
+  let m = /^\/product(?:\.html)?\/?$/.exec(req.path);
+  if (m) {
+    const old = /^\d+$/.test(String(req.query.id || "")) && db.prepare("SELECT slug FROM products WHERE id = ?").get(Number(req.query.id));
+    if (old?.slug) return res.redirect(301, `/product/${encodeURIComponent(old.slug)}`);
+    return sendHtml(res, S.otherPage(loadPage("product"), "product", base));
+  }
+  m = /^\/product\/([^/]+)\/?$/.exec(req.path);
+  if (m) {
+    const p = S.loadProduct("p.slug = ?", decodeURIComponent(m[1]));
+    if (!p) return sendHtml(res, S.otherPage(loadPage("product"), "__missing", base), 404);
+    return sendHtml(res, S.productPage(loadPage("product"), p, base));
+  }
+  // Каталог і категорії: /catalog, /catalog/<адреса>; старі /catalog?cat=N — переадресація
+  m = /^\/catalog(?:\.html)?(?:\/([^/]+))?\/?$/.exec(req.path);
+  if (m) {
+    const cats = S.categories();
+    if (!m[1] && /^\d+$/.test(String(req.query.cat || ""))) {
+      const c = cats.find((x) => x.id === Number(req.query.cat));
+      if (c) {
+        const rest = new URLSearchParams(req.query); rest.delete("cat");
+        return res.redirect(301, `/catalog/${encodeURIComponent(c.slug)}${rest.toString() ? "?" + rest : ""}`);
+      }
+    }
+    const cat = m[1] ? cats.find((x) => x.slug === decodeURIComponent(m[1])) : null;
+    if (m[1] && !cat) return sendHtml(res, S.otherPage(loadPage("catalog"), "__missing", base), 404);
+    return sendHtml(res, S.catalogPage(loadPage("catalog"), cat, base));
+  }
+
+  let name = req.path === "/" ? "index" : req.path.slice(1).replace(/\.html$/, "");
+  if (!/^[a-z0-9_-]+$/i.test(name)) return next();
+  const html = loadPage(name);
+  if (html === null) return next();
+  sendHtml(res, name === "index" ? S.homePage(html, base) : S.otherPage(html, name, base));
 });
+// Зменшені фото товарів у WebP: /img/p/400/<файл> (картки), /img/p/800/<файл> (сторінка товару).
+// Створюються при першому запиті й зберігаються в data/uploads/thumbs — далі віддаються готовими.
+const THUMB_SIZES = new Set([400, 800]);
+const thumbJobs = new Map();
+app.get("/img/p/:w/:file", async (req, res, next) => {
+  const w = Number(req.params.w);
+  const file = req.params.file;
+  if (!THUMB_SIZES.has(w) || !/^[a-z0-9_-]{6,64}\.(jpe?g|png|webp)$/i.test(file)) return next();
+  const src = path.join(UPLOADS_DIR, "products", file);
+  const out = path.join(UPLOADS_DIR, "thumbs", String(w), file.replace(/\.\w+$/, ".webp"));
+  try {
+    if (!fs.existsSync(out)) {
+      if (!fs.existsSync(src)) return next();
+      if (!thumbJobs.has(out)) {
+        thumbJobs.set(out, (async () => {
+          fs.mkdirSync(path.dirname(out), { recursive: true });
+          const tmp = `${out}.${process.pid}.tmp`;
+          await require("sharp")(src).rotate().resize({ width: w, height: w, fit: "inside", withoutEnlargement: true })
+            .webp({ quality: 78 }).toFile(tmp);
+          fs.renameSync(tmp, out);
+        })().finally(() => thumbJobs.delete(out)));
+      }
+      await thumbJobs.get(out);
+    }
+    res.set("Cache-Control", "public, max-age=2592000, immutable");
+    res.type("image/webp").sendFile(out);
+  } catch (e) {
+    console.error("Зменшене фото:", e.message);
+    res.redirect(302, `/uploads/products/${encodeURIComponent(file)}`); // запасний варіант — оригінал
+  }
+});
+
 app.use(express.static(PUBLIC_DIR, { extensions: ["html"] }));
 app.use("/uploads", express.static(UPLOADS_DIR, {
   maxAge: "30d",
@@ -408,6 +489,9 @@ function removeUnusedFiles(filenames) {
   for (const f of filenames) {
     if (used.get(f, f)) continue;
     fs.rm(path.join(PRODUCT_IMG_DIR, path.basename(f)), { force: true }, () => {});
+    for (const w of THUMB_SIZES) {
+      fs.rm(path.join(UPLOADS_DIR, "thumbs", String(w), path.basename(f).replace(/\.\w+$/, ".webp")), { force: true }, () => {});
+    }
   }
 }
 
@@ -467,8 +551,8 @@ function saveWithImages(fn) {
 // ---------- Каталог (публічний) ----------
 // Поля лота для вітрини + середня оцінка й кількість відгуків
 const PUBLIC_PRODUCT_SQL = `
-  SELECT p.id, p.category_id, c.name AS category_name, c.parent_id AS category_parent_id,
-         pc.name AS category_parent_name, p.sku, p.name, p.price, p.summary, p.description, p.in_stock,
+  SELECT p.id, p.slug, p.category_id, c.name AS category_name, c.slug AS category_slug, c.parent_id AS category_parent_id,
+         pc.name AS category_parent_name, pc.slug AS category_parent_slug, p.sku, p.name, p.price, p.summary, p.description, p.in_stock,
          ROUND(AVG(r.rating), 1) AS rating, COUNT(r.id) AS reviews_count
   FROM products p
   JOIN categories c ON c.id = p.category_id
@@ -501,7 +585,7 @@ app.get("/api/reviews", (req, res) => {
   const visible = "FROM reviews r JOIN products p ON p.id = r.product_id WHERE p.is_active = 1";
   const reviews = db.prepare(`
     SELECT r.id, r.rating, r.text, COALESCE(r.updated_at, r.created_at) AS created_at, u.name AS author,
-           p.id AS product_id, p.name AS product_name,
+           p.id AS product_id, p.slug AS product_slug, p.name AS product_name,
            (SELECT filename FROM product_images i WHERE i.product_id = p.id ORDER BY sort_order LIMIT 1) AS image
     ${visible.replace("FROM reviews r", "FROM reviews r JOIN users u ON u.id = r.user_id")}
     ORDER BY COALESCE(r.updated_at, r.created_at) DESC, r.id DESC LIMIT ? OFFSET ?`).all(limit, offset);
@@ -513,7 +597,7 @@ app.get("/api/reviews", (req, res) => {
 });
 
 app.get("/api/catalog", (req, res) => {
-  const categories = db.prepare("SELECT id, name, parent_id FROM categories ORDER BY sort_order, name").all();
+  const categories = db.prepare("SELECT id, name, slug, parent_id, description FROM categories ORDER BY sort_order, name").all();
   const products = withImages(db.prepare(`${PUBLIC_PRODUCT_SQL}
     WHERE p.is_active = 1 GROUP BY p.id ORDER BY p.in_stock DESC, p.name`).all());
   res.json({ categories, products, min_order: minOrder() });
@@ -521,9 +605,12 @@ app.get("/api/catalog", (req, res) => {
 
 // Сторінка лота: сам лот, відгуки та рекомендації
 app.get("/api/products/:id", wrap((req, res) => {
-  const id = toInt(req.params.id);
-  const p = db.prepare(`${PUBLIC_PRODUCT_SQL} WHERE p.id = ? AND p.is_active = 1 GROUP BY p.id`).get(id);
+  const key = String(req.params.id);
+  const p = /^\d+$/.test(key)
+    ? db.prepare(`${PUBLIC_PRODUCT_SQL} WHERE p.id = ? AND p.is_active = 1 GROUP BY p.id`).get(Number(key))
+    : db.prepare(`${PUBLIC_PRODUCT_SQL} WHERE p.slug = ? AND p.is_active = 1 GROUP BY p.id`).get(key.slice(0, 100));
   if (!p) throw new HttpError(404, "Лот не знайдено або його знято з продажу");
+  const id = p.id;
 
   const reviews = db.prepare(`
     SELECT r.id, r.user_id, r.rating, r.text, r.created_at, r.updated_at, u.name AS author,
@@ -926,7 +1013,7 @@ admin.use(requireUser, requireAdmin, express.json({ limit: "40mb" }));
 admin.get("/categories", (req, res) => {
   res.json({
     categories: db.prepare(`
-      SELECT c.id, c.name, c.sort_order, c.parent_id, COUNT(p.id) AS product_count,
+      SELECT c.id, c.name, c.slug, c.description, c.sort_order, c.parent_id, COUNT(p.id) AS product_count,
              (SELECT COUNT(*) FROM categories ch WHERE ch.parent_id = c.id) AS child_count
       FROM categories c LEFT JOIN products p ON p.category_id = c.id
       GROUP BY c.id ORDER BY c.sort_order, c.name`).all(),
@@ -937,7 +1024,8 @@ function categoryInput(body, selfId = null) {
   const name = str(body.name, 100);
   if (!name) throw new HttpError(400, "Вкажіть назву категорії");
   const sort = toInt(body.sort_order ?? 0);
-  return { name, sort: Number.isNaN(sort) ? 0 : sort, parent: parentInput(body.parent_id, selfId) };
+  return { name, sort: Number.isNaN(sort) ? 0 : sort, parent: parentInput(body.parent_id, selfId),
+    description: body.description === undefined ? undefined : str(body.description, 3000) };
 }
 // Батьківська категорія: лише категорія верхнього рівня (максимум два рівні вкладеності)
 function parentInput(value, selfId) {
@@ -960,17 +1048,20 @@ function uniqueGuard(fn) {
 }
 
 admin.post("/categories", wrap((req, res) => {
-  const { name, sort, parent } = categoryInput(req.body);
+  const { name, sort, parent, description = "" } = categoryInput(req.body);
   const id = uniqueGuard(() =>
-    db.prepare("INSERT INTO categories (name, sort_order, parent_id) VALUES (?, ?, ?)").run(name, sort, parent).lastInsertRowid);
+    db.prepare("INSERT INTO categories (name, sort_order, parent_id, slug, description) VALUES (?, ?, ?, ?, ?)")
+      .run(name, sort, parent, uniqueSlug(db, "categories", name), description).lastInsertRowid);
   res.status(201).json({ id: Number(id) });
 }));
 
 admin.put("/categories/:id", wrap((req, res) => {
   const cid = toInt(req.params.id);
-  const { name, sort, parent } = categoryInput(req.body, cid);
+  const { name, sort, parent, description } = categoryInput(req.body, cid);
+  // Адреса категорії не змінюється при перейменуванні — щоб не зламати посилання й позиції в пошуку
   const r = uniqueGuard(() =>
-    db.prepare("UPDATE categories SET name = ?, sort_order = ?, parent_id = ? WHERE id = ?").run(name, sort, parent, cid));
+    db.prepare("UPDATE categories SET name = ?, sort_order = ?, parent_id = ?, description = COALESCE(?, description) WHERE id = ?")
+      .run(name, sort, parent, description ?? null, cid));
   if (!r.changes) throw new HttpError(404, "Категорію не знайдено");
   res.json({ ok: true });
 }));
@@ -1037,6 +1128,7 @@ admin.post("/categories/:id/products", wrap((req, res) => {
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
       .run(catId, p.name, p.price, p.summary, p.description, p.is_active, p.in_stock, p.sku || null).lastInsertRowid);
     if (!p.sku) db.prepare("UPDATE products SET sku = ? WHERE id = ?").run(defaultSku(pid), pid);
+    db.prepare("UPDATE products SET slug = ? WHERE id = ?").run(uniqueSlug(db, "products", p.name, pid), pid);
     return { result: pid, removed: syncImages(pid, req.body.images || [], newFiles) };
   }));
   res.status(201).json({ id });

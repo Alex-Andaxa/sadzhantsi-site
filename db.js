@@ -109,6 +109,21 @@ addColumn("users", "is_super", "INTEGER NOT NULL DEFAULT 0");
 if (!db.prepare("SELECT 1 FROM users WHERE is_super = 1").get()) {
   db.prepare("UPDATE users SET is_super = 1, is_admin = 1 WHERE id = (SELECT MIN(id) FROM users WHERE is_admin = 1)").run();
 }
+// Адреси сторінок з назви (/product/yablunia-holden, /catalog/yabluka) і вступний текст категорії — для пошуку
+addColumn("products", "slug", "TEXT");
+addColumn("categories", "slug", "TEXT");
+addColumn("categories", "description", "TEXT NOT NULL DEFAULT ''");
+function backfillSlugs() {
+  const { uniqueSlug } = require("./slug");
+  for (const table of ["categories", "products"]) {
+    const rows = db.prepare(`SELECT id, name FROM ${table} WHERE slug IS NULL OR slug = '' ORDER BY id`).all();
+    const set = db.prepare(`UPDATE ${table} SET slug = ? WHERE id = ?`);
+    for (const r of rows) set.run(uniqueSlug(db, table, r.name, r.id), r.id);
+  }
+}
+backfillSlugs();
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_products_slug ON products(slug)");
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_slug ON categories(slug)");
 // Вкладені категорії: «Фруктові» → «Яблука», «Груші»… (два рівні)
 addColumn("categories", "parent_id", "INTEGER REFERENCES categories(id) ON DELETE CASCADE");
 // Короткий опис (прев'ю) для списку лотів; повний опис — лише на сторінці лота.
@@ -225,6 +240,7 @@ if (db.prepare("SELECT COUNT(*) AS n FROM categories").get().n === 0) {
   });
   db.exec("COMMIT");
   backfillSku();
+  backfillSlugs();
 }
 
 // Паролі: scrypt із сіллю

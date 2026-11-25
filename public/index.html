@@ -102,7 +102,7 @@
 
   // ---------- Відгуки ----------
   function reviewCardHtml(r) {
-    const url = `/product?id=${r.product_id}`;
+    const url = productUrl({ id: r.product_id, slug: r.product_slug });
     return `
       <article class="review-card">
         <a href="${url}" class="rc-product">

@@ -103,14 +103,14 @@
     $("pgMain").innerHTML = main + arrows;
     $("pgThumbs").innerHTML = imgs.length > 1 ? imgs.map((im, i) => `
       <button class="${i === idx ? "on" : ""}" data-i="${i}" aria-label="Фото ${i + 1}">
-        <img src="${esc(im.url)}" alt="">
+        <img src="${esc(thumbUrl(im.url, 400))}" alt="">
       </button>`).join("") : "";
   }
 
   function render() {
-    document.title = `${p.name} — Ягідник`;
+    document.title = `${p.name} — купити з доставкою по Україні | Ягідник`;
     $("view").innerHTML = `
-      <div class="crumbs"><a href="/catalog">Каталог</a> ›${p.category_parent_id ? ` <a href="/catalog?cat=${p.category_parent_id}">${esc(p.category_parent_name)}</a> ›` : ""} <a href="/catalog?cat=${p.category_id}">${esc(p.category_name)}</a> › ${esc(p.name)}</div>
+      <div class="crumbs"><a href="/catalog">Каталог</a> ›${p.category_parent_id ? ` <a href="${catUrl({ id: p.category_parent_id, slug: p.category_parent_slug })}">${esc(p.category_parent_name)}</a> ›` : ""} <a href="${catUrl({ id: p.category_id, slug: p.category_slug })}">${esc(p.category_name)}</a> › ${esc(p.name)}</div>
       <div class="product">
         <div>
           <div class="pg-main" id="pgMain"></div>
@@ -162,7 +162,7 @@
     renderGallery();
     renderReviews();
 
-    $("shareBtn").onclick = (e) => shareLot({ title: `${p.name} — Ягідник`, url: location.origin + "/product?id=" + p.id, anchor: e.currentTarget });
+    $("shareBtn").onclick = (e) => shareLot({ title: `${p.name} — Ягідник`, url: location.origin + productUrl(p), anchor: e.currentTarget });
     $("pgMain").addEventListener("click", (e) => {
       const step = e.target.closest("[data-step]")?.dataset.step;
       if (!step) return;
@@ -190,8 +190,10 @@
   }
 
   async function load() {
-    const id = new URLSearchParams(location.search).get("id");
-    const data = await api(`/api/products/${encodeURIComponent(id || "")}`);
+    // Адреса /product/<назва-латиницею>; старі посилання ?id=N сервер переадресовує
+    const key = decodeURIComponent((location.pathname.match(/^\/product\/([^/]+)/) || [])[1] || "") ||
+      new URLSearchParams(location.search).get("id") || "";
+    const data = await api(`/api/products/${encodeURIComponent(key)}`);
     const first = !p;
     p = data.product;
     reviews = data.reviews;

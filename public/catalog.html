@@ -53,6 +53,7 @@
           </select>
         </div>
       </div>
+      <div class="cat-intro" id="catIntro" hidden></div>
       <div class="sub-chips" id="subChips" hidden></div>
       <div class="grid catalog-grid" id="products"><p class="hint">Завантаження…</p></div>
     </section>
@@ -69,6 +70,7 @@
   const params = new URLSearchParams(location.search);
   const state = {
     cat: Number(params.get("cat")) || 0,
+    catSlug: decodeURIComponent((location.pathname.match(/^\/catalog\/([^/]+)/) || [])[1] || ""),
     q: params.get("q") || "",
     min: params.get("min") || "",
     max: params.get("max") || "",
@@ -78,14 +80,20 @@
 
   function syncUrl() {
     const p = new URLSearchParams();
-    if (state.cat) p.set("cat", state.cat);
     if (state.q) p.set("q", state.q);
     if (state.min) p.set("min", state.min);
     if (state.max) p.set("max", state.max);
     if (state.stock) p.set("stock", "1");
     if (state.sort !== "default") p.set("sort", state.sort);
     const qs = p.toString();
-    history.replaceState(null, "", qs ? `?${qs}` : location.pathname);
+    const cat = categories.find((c) => c.id === state.cat);
+    const path = cat ? catUrl(cat) : "/catalog";
+    history.replaceState(null, "", path + (qs ? `?${qs}` : ""));
+    // Вступний текст категорії
+    const intro = cat?.description || "";
+    $("catIntro").hidden = !intro;
+    $("catIntro").innerHTML = intro.split(/\n{2,}/).map((t) => `<p>${esc(t)}</p>`).join("");
+    document.querySelector('link[rel="canonical"]')?.setAttribute("href", location.origin + path);
     $("resetFilters").hidden = !(state.q || state.min || state.max || state.stock || state.cat);
   }
 
@@ -149,7 +157,7 @@
 
     $("catTitle").textContent = cat ? cat.name : "Усі саджанці";
     $("crumbCat").innerHTML = cat
-      ? `<a href="/catalog">Каталог</a>${parent ? ` › <a href="/catalog?cat=${parent.id}">${esc(parent.name)}</a>` : ""} › ${esc(cat.name)}`
+      ? `<a href="/catalog">Каталог</a>${parent ? ` › <a href="${catUrl(parent)}">${esc(parent.name)}</a>` : ""} › ${esc(cat.name)}`
       : "Каталог";
     document.title = `${cat ? cat.name : "Каталог саджанців"} — Ягідник`;
 
@@ -219,6 +227,7 @@
     fillControls();
     try {
       ({ products, categories } = await api("/api/catalog"));
+      if (state.catSlug) state.cat = categories.find((c) => c.slug === state.catSlug)?.id || 0;
       render();
     } catch (err) {
       $("products").innerHTML = `<div class="empty">Не вдалося завантажити каталог: ${esc(err.message)}</div>`;
